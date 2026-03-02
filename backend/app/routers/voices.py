@@ -53,6 +53,32 @@ async def upload_reference_clip(
     return voice
 
 
+@router.post("/{voice_id}/from-youtube", response_model=VoiceOut)
+async def create_voice_from_youtube(
+    voice_id: int, url: str, db: AsyncSession = Depends(get_db)
+):
+    from app.services.voice_pipeline import download_youtube_audio, extract_vocals
+
+    result = await db.execute(select(Voice).where(Voice.id == voice_id))
+    voice = result.scalar_one_or_none()
+    if not voice:
+        raise HTTPException(404, "Voice not found")
+
+    work_dir = settings.voices_path / f"voice_{voice_id}_work"
+    work_dir.mkdir(exist_ok=True)
+
+    # Download and extract vocals (runs synchronously — will be moved to worker later)
+    audio_path = download_youtube_audio(url, work_dir)
+    vocals_path = extract_vocals(audio_path, work_dir)
+
+    # Store full vocals as sample, user will trim via frontend later
+    voice.sample_audio_path = str(vocals_path)
+    voice.source = "youtube"
+    await db.commit()
+    await db.refresh(voice)
+    return voice
+
+
 @router.delete("/{voice_id}", status_code=204)
 async def delete_voice(voice_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Voice).where(Voice.id == voice_id))
