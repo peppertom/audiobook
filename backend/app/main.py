@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import init_db
 from app.config import settings
-from app.routers import books, voices
+from app.routers import books, voices, jobs
 
 
 @asynccontextmanager
@@ -28,6 +28,7 @@ app.mount("/storage", StaticFiles(directory=str(settings.storage_path)), name="s
 
 app.include_router(books.router)
 app.include_router(voices.router)
+app.include_router(jobs.router)
 
 
 @app.get("/health")
