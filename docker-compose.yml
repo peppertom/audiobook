@@ -1,0 +1,29 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - AUDIOBOOK_REDIS_URL=redis://redis:6379
+      - AUDIOBOOK_DATABASE_URL=sqlite+aiosqlite:///./storage/audiobook.db
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+# Worker runs NATIVELY on Mac for MPS GPU access:
+# cd backend && arq app.worker.WorkerSettings
