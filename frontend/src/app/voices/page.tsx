@@ -9,6 +9,8 @@ import {
   Voice,
 } from "@/lib/api";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 function VoiceCard({
   voice,
   onUpdate,
@@ -19,10 +21,12 @@ function VoiceCard({
   onDelete: (id: number) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [uploading, setUploading] = useState(false);
   const [ytUrl, setYtUrl] = useState("");
   const [extracting, setExtracting] = useState(false);
   const [showYoutube, setShowYoutube] = useState(false);
+  const [playing, setPlaying] = useState(false);
 
   const handleFileUpload = async (file: File) => {
     setUploading(true);
@@ -51,7 +55,19 @@ function VoiceCard({
     }
   };
 
+  const togglePlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (playing) {
+      audio.pause();
+      audio.currentTime = 0;
+    } else {
+      audio.play();
+    }
+  };
+
   const hasClip = !!voice.reference_clip_path;
+  const clipUrl = hasClip ? `${API_BASE}/${voice.reference_clip_path}` : null;
 
   return (
     <div className="bg-gray-900 rounded-lg px-5 py-4 space-y-3">
@@ -59,11 +75,11 @@ function VoiceCard({
         <div>
           <h3 className="font-semibold text-lg">{voice.name}</h3>
           <p className="text-gray-500 text-sm mt-0.5">
-            {voice.source}
+            {voice.language} &middot; {voice.source}
             {hasClip ? (
-              <span className="text-green-400 ml-2">✓ Reference clip ready</span>
+              <span className="text-green-400 ml-2">&#10003; Reference clip ready</span>
             ) : (
-              <span className="text-yellow-400 ml-2">⚠ No reference clip</span>
+              <span className="text-yellow-400 ml-2">&#9888; No reference clip</span>
             )}
           </p>
         </div>
@@ -75,8 +91,40 @@ function VoiceCard({
         </button>
       </div>
 
+      {/* Audio player for reference clip */}
+      {clipUrl && (
+        <div className="flex items-center gap-3 bg-gray-800/60 rounded-lg px-4 py-2.5">
+          <button
+            onClick={togglePlayback}
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-blue-600 hover:bg-blue-500 transition shrink-0"
+          >
+            {playing ? (
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <rect x="6" y="4" width="4" height="16" rx="1" />
+                <rect x="14" y="4" width="4" height="16" rx="1" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+          <span className="text-sm text-gray-400">
+            {playing ? "Playing reference clip..." : "Play reference clip"}
+          </span>
+          <audio
+            ref={audioRef}
+            src={clipUrl}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+            preload="none"
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
-        {/* WAV Upload */}
+        {/* Audio file upload */}
         <input
           ref={fileRef}
           type="file"
@@ -92,11 +140,7 @@ function VoiceCard({
           disabled={uploading}
           className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-lg transition disabled:opacity-50"
         >
-          {uploading
-            ? "Uploading..."
-            : hasClip
-              ? "Replace clip"
-              : "Upload audio"}
+          {uploading ? "Uploading..." : hasClip ? "Replace clip" : "Upload audio"}
         </button>
 
         {/* YouTube toggle */}
@@ -166,7 +210,7 @@ export default function VoicesPage() {
     <div>
       <h1 className="text-2xl font-bold mb-2">Voices</h1>
       <p className="text-gray-500 text-sm mb-6">
-        Create a voice, then upload a WAV reference clip (6-15s clean speech) or extract from YouTube.
+        Create a voice, then upload an audio reference clip (6-15s clean speech) or extract from YouTube.
       </p>
 
       <div className="flex gap-3 mb-6">

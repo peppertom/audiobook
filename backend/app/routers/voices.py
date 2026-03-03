@@ -1,3 +1,4 @@
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -5,9 +6,11 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.config import settings
+from app.config import settings, BACKEND_ROOT
 from app.models import Voice
 from app.schemas import VoiceCreate, VoiceOut
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
 
@@ -24,14 +27,21 @@ def convert_to_wav(input_path: Path, output_path: Path) -> Path:
     except FileNotFoundError:
         raise HTTPException(500, "ffmpeg not found. Install ffmpeg to enable audio conversion.")
     except subprocess.CalledProcessError as e:
-        raise HTTPException(
-            400,
-            f"Audio conversion failed: {e.stderr.strip() if e.stderr else 'Unknown ffmpeg error'}",
-        )
+        logger.error(f"ffmpeg conversion failed: {e.stderr}")
+        raise HTTPException(400, f"Audio conversion failed: {e.stderr.strip() if e.stderr else 'Unknown ffmpeg error'}")
     # Clean up original if different from output
     if input_path != output_path and input_path.exists():
         input_path.unlink()
     return output_path
+
+
+def to_relative_path(abs_path: Path) -> str:
+    """Convert absolute path to relative path from BACKEND_ROOT for URL serving."""
+    try:
+        return str(abs_path.relative_to(BACKEND_ROOT))
+    except ValueError:
+        # Fallback: just use storage/... format
+        return str(abs_path)
 
 router = APIRouter(prefix="/api/voices", tags=["voices"])
 
@@ -91,7 +101,7 @@ async def upload_reference_clip(
     else:
         convert_to_wav(upload_path, clip_path)
 
-    voice.reference_clip_path = str(clip_path)
+    voice.reference_clip_path = to_relative_path(clip_path)
     await db.commit()
     await db.refresh(voice)
     return voice

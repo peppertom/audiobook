@@ -1,12 +1,26 @@
+import logging
+from arq.connections import ArqRedis, create_pool, RedisSettings
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.config import settings
 from app.models import Job, Chapter, Voice, Book
 from app.schemas import JobCreate, JobOut, JobDetailOut
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+_arq_pool: ArqRedis | None = None
+
+
+async def get_arq_pool() -> ArqRedis:
+    """Get or create ARQ Redis connection pool for job enqueueing."""
+    global _arq_pool
+    if _arq_pool is None:
+        _arq_pool = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+    return _arq_pool
 
 
 class GenerateBookRequest(BaseModel):
@@ -34,8 +48,7 @@ async def create_job(job: JobCreate, db: AsyncSession = Depends(get_db)):
     db.add(db_job)
     await db.commit()
     await db.refresh(db_job)
-
-    # TODO: Enqueue ARQ task here once worker is connected
+    # Jobs are created as "queued" — user must click Start to begin processing
     return db_job
 
 
@@ -50,9 +63,13 @@ async def generate_book(book_id: int, req: GenerateBookRequest, db: AsyncSession
     )
     jobs = []
     for chapter in chapters.scalars().all():
-        # Skip if already generated
+        # Skip if already generated or queued
         existing = await db.execute(
-            select(Job).where(Job.chapter_id == chapter.id, Job.voice_id == req.voice_id, Job.status == "done")
+            select(Job).where(
+                Job.chapter_id == chapter.id,
+                Job.voice_id == req.voice_id,
+                Job.status.in_(["done", "queued", "processing"]),
+            )
         )
         if existing.scalar_one_or_none():
             continue
@@ -63,7 +80,92 @@ async def generate_book(book_id: int, req: GenerateBookRequest, db: AsyncSession
     await db.commit()
     for job in jobs:
         await db.refresh(job)
+    # Jobs created as "queued" — no auto-enqueue. User clicks Start.
+    logger.info(f"Created {len(jobs)} jobs for book {book_id} (queued, not started)")
     return jobs
+
+
+@router.post("/start-next", response_model=JobOut)
+async def start_next_job(db: AsyncSession = Depends(get_db)):
+    """Find the next queued job and enqueue it to the worker."""
+    # Check if something is already processing
+    processing = await db.execute(select(Job).where(Job.status == "processing"))
+    if processing.scalar_one_or_none():
+        raise HTTPException(409, "A job is already being processed. Wait for it to finish.")
+
+    # Find next queued job (oldest first)
+    result = await db.execute(
+        select(Job).where(Job.status == "queued").order_by(Job.created_at.asc())
+    )
+    job = result.scalars().first()
+    if not job:
+        raise HTTPException(404, "No queued jobs to start")
+
+    # Enqueue to ARQ worker
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("generate_tts", job.id)
+        logger.info(f"Started job {job.id} — enqueued for TTS generation")
+    except Exception as e:
+        raise HTTPException(503, f"Failed to enqueue job: {e}. Is the worker running?")
+
+    return job
+
+
+@router.post("/{job_id}/start", response_model=JobOut)
+async def start_job(job_id: int, db: AsyncSession = Depends(get_db)):
+    """Start a specific queued job."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status != "queued":
+        raise HTTPException(409, f"Job is {job.status}, can only start queued jobs")
+
+    try:
+        pool = await get_arq_pool()
+        await pool.enqueue_job("generate_tts", job.id)
+        logger.info(f"Started job {job.id} — enqueued for TTS generation")
+    except Exception as e:
+        raise HTTPException(503, f"Failed to enqueue job: {e}. Is the worker running?")
+
+    return job
+
+
+@router.post("/start-all", response_model=list[JobOut])
+async def start_all_jobs(db: AsyncSession = Depends(get_db)):
+    """Enqueue all queued jobs for sequential processing."""
+    result = await db.execute(
+        select(Job).where(Job.status == "queued").order_by(Job.created_at.asc())
+    )
+    queued_jobs = list(result.scalars().all())
+    if not queued_jobs:
+        raise HTTPException(404, "No queued jobs to start")
+
+    try:
+        pool = await get_arq_pool()
+        for job in queued_jobs:
+            await pool.enqueue_job("generate_tts", job.id)
+        logger.info(f"Started all {len(queued_jobs)} queued jobs")
+    except Exception as e:
+        raise HTTPException(503, f"Failed to enqueue jobs: {e}. Is the worker running?")
+
+    return queued_jobs
+
+
+@router.delete("/{job_id}", status_code=204)
+async def cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
+    """Cancel/delete a queued or failed job."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status == "processing":
+        raise HTTPException(409, "Cannot cancel a job that is currently processing")
+    if job.status == "done":
+        raise HTTPException(409, "Cannot cancel a completed job. Delete it instead.")
+    await db.delete(job)
+    await db.commit()
 
 
 @router.get("/", response_model=list[JobDetailOut])
@@ -89,6 +191,23 @@ async def list_jobs(db: AsyncSession = Depends(get_db)):
             detail.voice_name = job.voice.name
         out.append(detail)
     return out
+
+
+@router.post("/retry-failed", response_model=list[JobOut])
+async def retry_failed_jobs(db: AsyncSession = Depends(get_db)):
+    """Reset all failed jobs back to queued (does NOT auto-start)."""
+    result = await db.execute(select(Job).where(Job.status == "failed"))
+    failed_jobs = list(result.scalars().all())
+    if not failed_jobs:
+        return []
+
+    for job in failed_jobs:
+        job.status = "queued"
+        job.error_message = None
+        job.completed_at = None
+    await db.commit()
+    logger.info(f"Reset {len(failed_jobs)} failed jobs to queued")
+    return failed_jobs
 
 
 @router.get("/{job_id}", response_model=JobOut)

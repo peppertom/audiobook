@@ -1,6 +1,24 @@
 """XTTS-v2 Text-to-Speech engine."""
+import os
 import torch
 from pathlib import Path
+
+# Auto-accept Coqui TTS license (CPML non-commercial)
+os.environ["COQUI_TOS_AGREED"] = "1"
+
+# PyTorch 2.6+ defaults weights_only=True which breaks TTS model loading.
+# Monkey-patch torch.load to use weights_only=False for TTS compatibility.
+_original_torch_load = torch.load
+
+
+def _patched_torch_load(*args, **kwargs):
+    if "weights_only" not in kwargs:
+        kwargs["weights_only"] = False
+    return _original_torch_load(*args, **kwargs)
+
+
+torch.load = _patched_torch_load
+
 from TTS.api import TTS
 
 

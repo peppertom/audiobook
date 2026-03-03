@@ -1,13 +1,16 @@
 """ARQ worker for TTS generation jobs."""
+import logging
 from datetime import datetime
 from pathlib import Path
 from arq.connections import RedisSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from app.config import settings
+from app.config import settings, BACKEND_ROOT
 from app.models import Job, Chapter, Voice
 from app.database import Base
 from app.services.tts_engine import TTSEngine
+
+logger = logging.getLogger(__name__)
 
 
 async def generate_tts(ctx, job_id: int):
@@ -24,7 +27,9 @@ async def generate_tts(ctx, job_id: int):
 
         # Mark processing
         job.status = "processing"
+        job.error_message = "Starting TTS generation..."
         await db.commit()
+        logger.info(f"Job {job_id}: Started processing")
 
         try:
             # Load chapter and voice
@@ -36,33 +41,60 @@ async def generate_tts(ctx, job_id: int):
             if not voice.reference_clip_path:
                 raise ValueError("Voice has no reference clip")
 
+            # Resolve reference clip path (may be relative to BACKEND_ROOT)
+            ref_clip = Path(voice.reference_clip_path)
+            if not ref_clip.is_absolute():
+                ref_clip = BACKEND_ROOT / ref_clip
+            if not ref_clip.exists():
+                raise ValueError(f"Reference clip not found: {ref_clip}")
+
+            job.error_message = f"Generating audio for chapter: {chapter.title[:50]}..."
+            await db.commit()
+            logger.info(f"Job {job_id}: Generating TTS for chapter '{chapter.title}' ({chapter.word_count} words)")
+
             # Generate audio
             output_path = settings.audio_path / f"ch{chapter.id}_v{voice.id}.wav"
             tts.generate(
                 text=chapter.text_content,
-                reference_clip=Path(voice.reference_clip_path),
+                reference_clip=ref_clip,
                 output_path=output_path,
                 language=voice.language,
             )
 
+            # Store relative path for URL serving
+            try:
+                relative_output = str(output_path.relative_to(BACKEND_ROOT))
+            except ValueError:
+                relative_output = str(output_path)
+
             # Update job
             job.status = "done"
-            job.audio_output_path = str(output_path)
+            job.audio_output_path = relative_output
+            job.error_message = None  # Clear any previous error messages
             job.completed_at = datetime.utcnow()
             await db.commit()
+            logger.info(f"Job {job_id}: Completed successfully")
 
         except Exception as e:
             job.status = "failed"
             job.error_message = str(e)
             job.completed_at = datetime.utcnow()
             await db.commit()
+            logger.error(f"Job {job_id}: Failed with error: {e}")
             raise
 
 
 async def startup(ctx):
     """Worker startup — load TTS model and DB engine."""
+    # Ensure storage directories exist
+    for path in [settings.storage_path, settings.audio_path, settings.voices_path]:
+        path.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Loading TTS model (device will be auto-detected)...")
     tts = TTSEngine()
     tts.load_model()
+    logger.info(f"TTS model loaded on device: {tts.device}")
+
     ctx["tts_engine"] = tts
     ctx["db_engine"] = create_async_engine(settings.database_url, echo=False)
 

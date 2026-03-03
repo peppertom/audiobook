@@ -6,11 +6,13 @@ from app.database import init_db
 from app.config import settings
 from app.routers import books, voices, jobs, playback
 
+# Ensure storage directories exist before StaticFiles mount
+for path in [settings.storage_path, settings.books_path, settings.audio_path, settings.voices_path]:
+    path.mkdir(parents=True, exist_ok=True)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    for path in [settings.books_path, settings.audio_path, settings.voices_path]:
-        path.mkdir(parents=True, exist_ok=True)
     await init_db()
     yield
 
@@ -19,7 +21,7 @@ app = FastAPI(title="Audiobook", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:8001"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
