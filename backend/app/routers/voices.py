@@ -14,11 +14,20 @@ ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".w
 
 def convert_to_wav(input_path: Path, output_path: Path) -> Path:
     """Convert any audio format to WAV (22050Hz mono) for XTTS-v2 compatibility."""
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(input_path), "-ar", "22050", "-ac", "1", str(output_path)],
-        check=True,
-        capture_output=True,
-    )
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(input_path), "-ar", "22050", "-ac", "1", str(output_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        raise HTTPException(500, "ffmpeg not found. Install ffmpeg to enable audio conversion.")
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            400,
+            f"Audio conversion failed: {e.stderr.strip() if e.stderr else 'Unknown ffmpeg error'}",
+        )
     # Clean up original if different from output
     if input_path != output_path and input_path.exists():
         input_path.unlink()
@@ -65,6 +74,9 @@ async def upload_reference_clip(
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_AUDIO_EXTENSIONS:
         raise HTTPException(400, f"Unsupported format. Allowed: {', '.join(ALLOWED_AUDIO_EXTENSIONS)}")
+
+    # Ensure voices directory exists
+    settings.voices_path.mkdir(parents=True, exist_ok=True)
 
     # Save uploaded file with original extension
     upload_path = settings.voices_path / f"voice_{voice_id}_upload{ext}"
