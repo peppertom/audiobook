@@ -1,4 +1,6 @@
 import shutil
+import subprocess
+from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +8,21 @@ from app.database import get_db
 from app.config import settings
 from app.models import Voice
 from app.schemas import VoiceCreate, VoiceOut
+
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
+
+
+def convert_to_wav(input_path: Path, output_path: Path) -> Path:
+    """Convert any audio format to WAV (22050Hz mono) for XTTS-v2 compatibility."""
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(input_path), "-ar", "22050", "-ac", "1", str(output_path)],
+        check=True,
+        capture_output=True,
+    )
+    # Clean up original if different from output
+    if input_path != output_path and input_path.exists():
+        input_path.unlink()
+    return output_path
 
 router = APIRouter(prefix="/api/voices", tags=["voices"])
 
@@ -43,9 +60,24 @@ async def upload_reference_clip(
     if not voice:
         raise HTTPException(404, "Voice not found")
 
-    clip_path = settings.voices_path / f"voice_{voice_id}_ref.wav"
-    with open(clip_path, "wb") as f:
+    # Validate file extension
+    filename = file.filename or "clip.wav"
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(400, f"Unsupported format. Allowed: {', '.join(ALLOWED_AUDIO_EXTENSIONS)}")
+
+    # Save uploaded file with original extension
+    upload_path = settings.voices_path / f"voice_{voice_id}_upload{ext}"
+    with open(upload_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
+
+    # Convert to WAV if needed (XTTS-v2 requires 22050Hz mono WAV)
+    clip_path = settings.voices_path / f"voice_{voice_id}_ref.wav"
+    if ext == ".wav":
+        # Still normalize to 22050Hz mono
+        convert_to_wav(upload_path, clip_path)
+    else:
+        convert_to_wav(upload_path, clip_path)
 
     voice.reference_clip_path = str(clip_path)
     await db.commit()

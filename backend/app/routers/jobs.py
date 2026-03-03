@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Job, Chapter, Voice, Book
-from app.schemas import JobCreate, JobOut
+from app.schemas import JobCreate, JobOut, JobDetailOut
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -66,10 +66,29 @@ async def generate_book(book_id: int, req: GenerateBookRequest, db: AsyncSession
     return jobs
 
 
-@router.get("/", response_model=list[JobOut])
+@router.get("/", response_model=list[JobDetailOut])
 async def list_jobs(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Job).order_by(Job.created_at.desc()))
-    return result.scalars().all()
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Job)
+        .options(selectinload(Job.chapter), selectinload(Job.voice))
+        .order_by(Job.created_at.desc())
+    )
+    jobs = result.scalars().all()
+    out = []
+    for job in jobs:
+        detail = JobDetailOut.model_validate(job)
+        if job.chapter:
+            detail.chapter_title = job.chapter.title
+            detail.chapter_number = job.chapter.chapter_number
+            # Get book title through chapter
+            book_result = await db.execute(select(Book).where(Book.id == job.chapter.book_id))
+            book = book_result.scalar_one_or_none()
+            detail.book_title = book.title if book else ""
+        if job.voice:
+            detail.voice_name = job.voice.name
+        out.append(detail)
+    return out
 
 
 @router.get("/{job_id}", response_model=JobOut)
