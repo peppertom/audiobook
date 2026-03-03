@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { getVoices, Voice } from "@/lib/api";
+import Link from "next/link";
 
 export default function VoiceSelector({
   selected,
@@ -15,9 +16,12 @@ export default function VoiceSelector({
     getVoices().then(setVoices).catch(() => {});
   }, []);
 
+  // Only show voices that have a reference clip (ready for TTS)
+  const readyVoices = voices.filter((v) => v.reference_clip_path);
+
   return (
     <div className="flex flex-wrap gap-2">
-      {voices.map((v) => (
+      {readyVoices.map((v) => (
         <button
           key={v.id}
           onClick={() => onSelect(v.id)}
@@ -30,9 +34,13 @@ export default function VoiceSelector({
           {v.name}
         </button>
       ))}
-      {voices.length === 0 && (
+      {readyVoices.length === 0 && (
         <p className="text-gray-500 text-sm">
-          No voices yet. Create one in the Voices page.
+          No voices with reference clips.{" "}
+          <Link href="/voices" className="text-blue-400 hover:underline">
+            Add one in Voices page
+          </Link>
+          .
         </p>
       )}
     </div>

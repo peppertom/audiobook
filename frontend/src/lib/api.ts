@@ -28,6 +28,20 @@ export const deleteBook = (id: number) =>
 export const getVoices = () => fetchApi<Voice[]>("/api/voices/");
 export const createVoice = (data: { name: string; language: string; source: string }) =>
   fetchApi<Voice>("/api/voices/", { method: "POST", body: JSON.stringify(data) });
+export const uploadReferenceClip = async (voiceId: number, file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/voices/${voiceId}/reference-clip`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error("Reference clip upload failed");
+  return res.json() as Promise<Voice>;
+};
+export const createVoiceFromYoutube = async (voiceId: number, url: string) =>
+  fetchApi<Voice>(`/api/voices/${voiceId}/from-youtube?url=${encodeURIComponent(url)}`, {
+    method: "POST",
+  });
 export const deleteVoice = (id: number) =>
   fetch(`${API_BASE}/api/voices/${id}`, { method: "DELETE" });
 
@@ -63,6 +77,8 @@ export interface Job {
   id: number; chapter_id: number; voice_id: number; status: string;
   audio_output_path: string | null; duration_seconds: number | null;
   error_message: string | null; created_at: string; completed_at: string | null;
+  chapter_title?: string; chapter_number?: number;
+  book_title?: string; voice_name?: string;
 }
 export interface PlaybackState {
   id: number; book_id: number; voice_id: number;

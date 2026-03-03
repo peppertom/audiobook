@@ -71,6 +71,13 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JobDetailOut(JobOut):
+    chapter_title: str = ""
+    chapter_number: int = 0
+    book_title: str = ""
+    voice_name: str = ""
+
+
 # --- Playback ---
 class PlaybackStateUpdate(BaseModel):
     book_id: int
