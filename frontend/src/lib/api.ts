@@ -1,0 +1,74 @@
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options?.headers },
+  });
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+// Books
+export const getBooks = () => fetchApi<Book[]>("/api/books/");
+export const getBook = (id: number) => fetchApi<BookDetail>(`/api/books/${id}`);
+export const uploadBook = async (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/api/books/upload`, { method: "POST", body: form });
+  if (!res.ok) throw new Error("Upload failed");
+  return res.json() as Promise<Book>;
+};
+export const deleteBook = (id: number) =>
+  fetch(`${API_BASE}/api/books/${id}`, { method: "DELETE" });
+
+// Voices
+export const getVoices = () => fetchApi<Voice[]>("/api/voices/");
+export const createVoice = (data: { name: string; language: string; source: string }) =>
+  fetchApi<Voice>("/api/voices/", { method: "POST", body: JSON.stringify(data) });
+export const deleteVoice = (id: number) =>
+  fetch(`${API_BASE}/api/voices/${id}`, { method: "DELETE" });
+
+// Jobs
+export const getJobs = () => fetchApi<Job[]>("/api/jobs/");
+export const generateBook = (bookId: number, voiceId: number) =>
+  fetchApi<Job[]>(`/api/jobs/generate-book/${bookId}`, {
+    method: "POST",
+    body: JSON.stringify({ voice_id: voiceId }),
+  });
+
+// Playback
+export const getPlaybackState = (bookId: number, voiceId: number) =>
+  fetchApi<PlaybackState>(`/api/playback/?book_id=${bookId}&voice_id=${voiceId}`);
+export const savePlaybackState = (state: PlaybackStateUpdate) =>
+  fetchApi<PlaybackState>("/api/playback/", { method: "PUT", body: JSON.stringify(state) });
+
+// Types
+export interface Book {
+  id: number; title: string; author: string; language: string;
+  original_filename: string; chapter_count: number; created_at: string;
+}
+export interface Chapter {
+  id: number; chapter_number: number; title: string; word_count: number;
+}
+export interface BookDetail extends Book { chapters: Chapter[]; }
+export interface Voice {
+  id: number; name: string; description: string; language: string;
+  sample_audio_path: string | null; reference_clip_path: string | null;
+  source: string; created_at: string;
+}
+export interface Job {
+  id: number; chapter_id: number; voice_id: number; status: string;
+  audio_output_path: string | null; duration_seconds: number | null;
+  error_message: string | null; created_at: string; completed_at: string | null;
+}
+export interface PlaybackState {
+  id: number; book_id: number; voice_id: number;
+  current_chapter_id: number; position_seconds: number; updated_at: string;
+}
+export interface PlaybackStateUpdate {
+  book_id: number; voice_id: number;
+  current_chapter_id: number; position_seconds: number;
+}
