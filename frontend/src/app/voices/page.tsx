@@ -80,7 +80,7 @@ function VoiceCard({
         <input
           ref={fileRef}
           type="file"
-          accept=".wav,.mp3,.ogg,.flac"
+          accept=".wav,.mp3,.ogg,.flac,.m4a,.aac,.wma,audio/*"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -96,7 +96,7 @@ function VoiceCard({
             ? "Uploading..."
             : hasClip
               ? "Replace clip"
-              : "Upload WAV"}
+              : "Upload audio"}
         </button>
 
         {/* YouTube toggle */}
