@@ -7,12 +7,15 @@ BACKEND_ROOT = Path(__file__).parent.parent.resolve()
 
 
 class Settings(BaseSettings):
-    database_url: str = f"sqlite+aiosqlite:///{BACKEND_ROOT}/storage/audiobook.db"
+    database_url: str = "postgresql+asyncpg://audiobook:audiobook_dev@localhost:5433/audiobook"
     storage_path: Path = BACKEND_ROOT / "storage"
     books_path: Path = BACKEND_ROOT / "storage" / "books"
     audio_path: Path = BACKEND_ROOT / "storage" / "audio"
     voices_path: Path = BACKEND_ROOT / "storage" / "voices"
     redis_url: str = "redis://localhost:6379"
+    jwt_secret: str = "dev-secret-change-in-production"
+    jwt_algorithm: str = "HS256"
+    free_signup_credits: int = 3
 
     model_config = {"env_prefix": "AUDIOBOOK_"}
 

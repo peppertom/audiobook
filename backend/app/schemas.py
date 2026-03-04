@@ -1,5 +1,74 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+
+
+# --- Auth ---
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: "UserResponse"
+
+
+# --- Users ---
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str | None
+    avatar_url: str | None
+    locale: str
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class UserSettingsResponse(BaseModel):
+    playback_speed: float
+    audio_quality: str
+    email_notifications: bool
+    theme: str
+    ui_language: str
+    model_config = {"from_attributes": True}
+
+
+class UserSettingsUpdate(BaseModel):
+    playback_speed: float | None = None
+    audio_quality: str | None = None
+    email_notifications: bool | None = None
+    theme: str | None = None
+    ui_language: str | None = None
+
+
+class CreditBalanceResponse(BaseModel):
+    balance: int
+    model_config = {"from_attributes": True}
+
+
+class CreditTransactionResponse(BaseModel):
+    id: int
+    amount: int
+    type: str
+    description: str | None
+    reference_id: str | None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class CostEstimateResponse(BaseModel):
+    total_words: int
+    credits_required: int
+    estimated_cost_usd: float
+    current_balance: int
+    sufficient_credits: bool
 
 
 # --- Books ---

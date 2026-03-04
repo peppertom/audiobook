@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Link from "next/link";
+import { AuthProvider } from "@/lib/auth-context";
+import { Navbar } from "@/components/Navbar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,23 +29,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 text-gray-100 min-h-screen`}
       >
-        <nav className="border-b border-gray-800 px-6 py-4">
-          <div className="max-w-6xl mx-auto flex items-center gap-8">
-            <Link href="/" className="text-xl font-bold">
-              Audiobook
-            </Link>
-            <Link href="/" className="text-gray-400 hover:text-white">
-              Library
-            </Link>
-            <Link href="/voices" className="text-gray-400 hover:text-white">
-              Voices
-            </Link>
-            <Link href="/queue" className="text-gray-400 hover:text-white">
-              Queue
-            </Link>
-          </div>
-        </nav>
-        <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+        <AuthProvider>
+          <Navbar />
+          <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+        </AuthProvider>
       </body>
     </html>
   );

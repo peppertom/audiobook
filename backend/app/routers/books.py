@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.config import settings
-from app.models import Book, Chapter
-from app.schemas import BookOut, BookDetailOut
+from app.models import Book, Chapter, User
+from app.schemas import BookOut, BookDetailOut, CostEstimateResponse
 from app.services.epub_parser import parse_epub
+from app.services.credits import calculate_credits_needed, get_balance, WORDS_PER_CREDIT
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 
@@ -79,6 +81,35 @@ async def get_chapter_text(book_id: int, chapter_id: int, db: AsyncSession = Dep
     if not chapter:
         raise HTTPException(404, "Chapter not found")
     return {"id": chapter.id, "title": chapter.title, "text_content": chapter.text_content}
+
+
+@router.get("/{book_id}/cost-estimate", response_model=CostEstimateResponse)
+async def get_cost_estimate(
+    book_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Estimate conversion cost in credits for a book."""
+    result = await db.execute(
+        select(Book).where(Book.id == book_id).options(selectinload(Book.chapters))
+    )
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(404, "Book not found")
+
+    total_words = sum(ch.word_count for ch in book.chapters)
+    credits_required = calculate_credits_needed(total_words)
+    current_balance = await get_balance(db, user.id)
+    # Placeholder: $0.50 per credit
+    estimated_cost_usd = round(credits_required * 0.50, 2)
+
+    return CostEstimateResponse(
+        total_words=total_words,
+        credits_required=credits_required,
+        estimated_cost_usd=estimated_cost_usd,
+        current_balance=current_balance,
+        sufficient_credits=current_balance >= credits_required,
+    )
 
 
 @router.delete("/{book_id}", status_code=204)

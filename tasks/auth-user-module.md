@@ -552,3 +552,25 @@ Task 8 (frontend deps) — párhuzamosan indítható Task 1-gyel
 ```
 
 **Becsült idő:** 1-2 nap
+
+All 12 tasks from tasks/auth-user-module.md are fully implemented and validated.
+
+Summary of completed work
+Backend (Tasks 1–7)
+Task 1: PostgreSQL in docker-compose.yml, config.py uses postgresql+asyncpg, requirements.txt has asyncpg + psycopg2-binary
+Task 2: python-jose[cryptography] + bcrypt in requirements
+Task 3: User, UserSettings, CreditBalance, CreditTransaction models with relationships; existing models (Book, Voice, Job, PlaybackState) have user_id columns; all Pydantic schemas in schemas.py
+Task 4: get_current_user_optional() and get_current_user() JWT auth middleware with auto-provisioning
+Task 5: users.py router with /api/users/me, settings, and credits endpoints; registered in main.py
+Task 6: credits.py service with calculate_credits_needed(), get_balance(), spend_credits(), grant_credits(), check_purchase_exists()
+Task 7: GET /api/books/{book_id}/cost-estimate endpoint with CostEstimateResponse schema
+Frontend (Tasks 8–12)
+Task 8: next-auth, clsx, lucide-react in package.json
+Task 9: Environment files created (.env.local, .env.example)
+Task 10: AuthProvider with login/register/logout via JWT + localStorage; Navbar with user menu; layout.tsx wraps children with AuthProvider
+Task 11: Custom /auth/signin and /auth/register pages
+Task 12: api.ts with authHeaders() and fetchApi() wrappers; user API functions (getCurrentUser(), getUserSettings(), etc.); TypeScript types for all auth/user data models
+Validation
+Backend: all models, auth, credits, schemas import successfully; calculate_credits_needed() assertions pass
+Frontend: next build compiles with zero errors — all 8 routes including /auth/signin and /auth/register generate successfully
+Architecture note: The implementation evolved from the original NextAuth.js OAuth plan to a custom JWT-based email/password auth system with auth_routes.py (register + login endpoints) and a client-side AuthProvider using localStorage for token persistence. OAuth providers (Google/GitHub) can be added later as additional auth routes.
