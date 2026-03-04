@@ -47,6 +47,7 @@ class Job(Base):
     status: Mapped[str] = mapped_column(String(20), default="queued")  # queued|processing|done|failed
     audio_output_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timing_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: [{start, end, text}, ...]
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

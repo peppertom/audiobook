@@ -70,6 +70,17 @@ async def get_book(book_id: int, db: AsyncSession = Depends(get_db)):
     return book
 
 
+@router.get("/{book_id}/chapters/{chapter_id}/text")
+async def get_chapter_text(book_id: int, chapter_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(Chapter).where(Chapter.id == chapter_id, Chapter.book_id == book_id)
+    )
+    chapter = result.scalar_one_or_none()
+    if not chapter:
+        raise HTTPException(404, "Chapter not found")
+    return {"id": chapter.id, "title": chapter.title, "text_content": chapter.text_content}
+
+
 @router.delete("/{book_id}", status_code=204)
 async def delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Book).where(Book.id == book_id))

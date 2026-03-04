@@ -24,7 +24,8 @@ async def get_arq_pool() -> ArqRedis:
 
 
 class GenerateBookRequest(BaseModel):
-    voice_id: int
+    voice_id: int  # default voice for all chapters
+    chapter_voices: dict[int, int] = {}  # optional per-chapter overrides: {chapter_id: voice_id}
 
 
 @router.post("/", response_model=JobOut, status_code=201)
@@ -63,17 +64,18 @@ async def generate_book(book_id: int, req: GenerateBookRequest, db: AsyncSession
     )
     jobs = []
     for chapter in chapters.scalars().all():
-        # Skip if already generated or queued
+        voice_id = req.chapter_voices.get(chapter.id, req.voice_id)
+        # Skip if already generated or queued with this voice
         existing = await db.execute(
             select(Job).where(
                 Job.chapter_id == chapter.id,
-                Job.voice_id == req.voice_id,
+                Job.voice_id == voice_id,
                 Job.status.in_(["done", "queued", "processing"]),
             )
         )
         if existing.scalar_one_or_none():
             continue
-        job = Job(chapter_id=chapter.id, voice_id=req.voice_id, status="queued")
+        job = Job(chapter_id=chapter.id, voice_id=voice_id, status="queued")
         db.add(job)
         jobs.append(job)
 
@@ -169,13 +171,12 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/", response_model=list[JobDetailOut])
-async def list_jobs(db: AsyncSession = Depends(get_db)):
+async def list_jobs(book_id: int | None = None, db: AsyncSession = Depends(get_db)):
     from sqlalchemy.orm import selectinload
-    result = await db.execute(
-        select(Job)
-        .options(selectinload(Job.chapter), selectinload(Job.voice))
-        .order_by(Job.created_at.desc())
-    )
+    query = select(Job).options(selectinload(Job.chapter), selectinload(Job.voice))
+    if book_id is not None:
+        query = query.join(Chapter, Job.chapter_id == Chapter.id).where(Chapter.book_id == book_id)
+    result = await db.execute(query.order_by(Job.created_at.desc()))
     jobs = result.scalars().all()
     out = []
     for job in jobs:
@@ -208,6 +209,28 @@ async def retry_failed_jobs(db: AsyncSession = Depends(get_db)):
     await db.commit()
     logger.info(f"Reset {len(failed_jobs)} failed jobs to queued")
     return failed_jobs
+
+
+class UpdateJobVoice(BaseModel):
+    voice_id: int
+
+
+@router.patch("/{job_id}/voice", response_model=JobOut)
+async def update_job_voice(job_id: int, req: UpdateJobVoice, db: AsyncSession = Depends(get_db)):
+    """Change the voice on a queued job."""
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(404, "Job not found")
+    if job.status != "queued":
+        raise HTTPException(409, f"Can only change voice on queued jobs (current: {job.status})")
+    v = await db.execute(select(Voice).where(Voice.id == req.voice_id))
+    if not v.scalar_one_or_none():
+        raise HTTPException(404, "Voice not found")
+    job.voice_id = req.voice_id
+    await db.commit()
+    await db.refresh(job)
+    return job
 
 
 @router.get("/{job_id}", response_model=JobOut)

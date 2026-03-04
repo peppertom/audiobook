@@ -1,5 +1,6 @@
 """XTTS-v2 Text-to-Speech engine."""
 import os
+import wave
 import torch
 from pathlib import Path
 
@@ -31,16 +32,32 @@ class TTSEngine:
         """Load XTTS-v2 model into memory."""
         self.model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(self.device)
 
-    def generate(self, text: str, reference_clip: Path, output_path: Path, language: str = "hu") -> Path:
-        """Generate speech audio from text using a reference voice clip."""
+    @staticmethod
+    def _get_wav_duration(path: Path) -> float:
+        """Get duration of a WAV file in seconds."""
+        with wave.open(str(path), "rb") as wf:
+            return wf.getnframes() / wf.getframerate()
+
+    def generate(self, text: str, reference_clip: Path, output_path: Path, language: str = "hu", on_progress=None) -> tuple[Path, list[dict]]:
+        """Generate speech audio from text using a reference voice clip.
+
+        on_progress: optional callback(chunk_index, total_chunks, chunk_text_preview)
+
+        Returns:
+            (output_path, timing_data) where timing_data is a list of
+            {"start": float, "end": float, "text": str} per chunk.
+        """
         if not self.model:
             raise RuntimeError("TTS model not loaded. Call load_model() first.")
 
         # XTTS-v2 has a context window limit, split long text into chunks
         chunks = self._split_text(text, max_chars=500)
         chunk_paths = []
+        chunk_durations = []
 
         for i, chunk in enumerate(chunks):
+            if on_progress:
+                on_progress(i, len(chunks), chunk[:80])
             chunk_path = output_path.parent / f"{output_path.stem}_chunk_{i}.wav"
             self.model.tts_to_file(
                 text=chunk,
@@ -49,6 +66,18 @@ class TTSEngine:
                 file_path=str(chunk_path),
             )
             chunk_paths.append(chunk_path)
+            chunk_durations.append(self._get_wav_duration(chunk_path))
+
+        # Build timing data
+        timing_data = []
+        elapsed = 0.0
+        for chunk_text, dur in zip(chunks, chunk_durations):
+            timing_data.append({
+                "start": round(elapsed, 3),
+                "end": round(elapsed + dur, 3),
+                "text": chunk_text,
+            })
+            elapsed += dur
 
         # Concatenate chunks
         if len(chunk_paths) == 1:
@@ -58,7 +87,7 @@ class TTSEngine:
             for cp in chunk_paths:
                 cp.unlink(missing_ok=True)
 
-        return output_path
+        return output_path, timing_data
 
     def _split_text(self, text: str, max_chars: int = 500) -> list[str]:
         """Split text into chunks at sentence boundaries."""

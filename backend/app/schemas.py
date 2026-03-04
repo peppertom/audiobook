@@ -65,6 +65,7 @@ class JobOut(BaseModel):
     status: str
     audio_output_path: str | None
     duration_seconds: float | None
+    timing_data: str | None = None  # JSON string: [{start, end, text}, ...]
     error_message: str | None
     created_at: datetime
     completed_at: datetime | None

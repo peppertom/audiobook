@@ -23,6 +23,8 @@ export const uploadBook = async (file: File) => {
 };
 export const deleteBook = (id: number) =>
   fetch(`${API_BASE}/api/books/${id}`, { method: "DELETE" });
+export const getChapterText = (bookId: number, chapterId: number) =>
+  fetchApi<ChapterText>(`/api/books/${bookId}/chapters/${chapterId}/text`);
 
 // Voices
 export const getVoices = () => fetchApi<Voice[]>("/api/voices/");
@@ -47,10 +49,11 @@ export const deleteVoice = (id: number) =>
 
 // Jobs
 export const getJobs = () => fetchApi<Job[]>("/api/jobs/");
-export const generateBook = (bookId: number, voiceId: number) =>
+export const getBookJobs = (bookId: number) => fetchApi<Job[]>(`/api/jobs/?book_id=${bookId}`);
+export const generateBook = (bookId: number, voiceId: number, chapterVoices?: Record<number, number>) =>
   fetchApi<Job[]>(`/api/jobs/generate-book/${bookId}`, {
     method: "POST",
-    body: JSON.stringify({ voice_id: voiceId }),
+    body: JSON.stringify({ voice_id: voiceId, chapter_voices: chapterVoices || {} }),
   });
 
 // Playback
@@ -73,12 +76,19 @@ export interface Voice {
   sample_audio_path: string | null; reference_clip_path: string | null;
   source: string; created_at: string;
 }
+export interface TimingChunk {
+  start: number; end: number; text: string;
+}
 export interface Job {
   id: number; chapter_id: number; voice_id: number; status: string;
   audio_output_path: string | null; duration_seconds: number | null;
+  timing_data: string | null;
   error_message: string | null; created_at: string; completed_at: string | null;
   chapter_title?: string; chapter_number?: number;
   book_title?: string; voice_name?: string;
+}
+export interface ChapterText {
+  id: number; title: string; text_content: string;
 }
 export interface PlaybackState {
   id: number; book_id: number; voice_id: number;

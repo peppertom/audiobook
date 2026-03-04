@@ -1,4 +1,7 @@
 """ARQ worker for TTS generation jobs."""
+import asyncio
+import functools
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -52,13 +55,35 @@ async def generate_tts(ctx, job_id: int):
             await db.commit()
             logger.info(f"Job {job_id}: Generating TTS for chapter '{chapter.title}' ({chapter.word_count} words)")
 
-            # Generate audio
+            # Progress callback — updates DB so frontend can poll.
+            # Called from a worker thread (since tts.generate is blocking),
+            # schedules async DB updates back on the event loop.
+            loop = asyncio.get_running_loop()
+
+            def on_chunk_progress(chunk_idx, total_chunks, preview):
+                pct = int((chunk_idx / total_chunks) * 100)
+                msg = f"Chunk {chunk_idx + 1}/{total_chunks} ({pct}%) — {preview}..."
+                logger.info(f"Job {job_id}: {msg}")
+
+                async def _update():
+                    job.error_message = msg
+                    await db.commit()
+
+                asyncio.run_coroutine_threadsafe(_update(), loop).result(timeout=10)
+
+            # Run blocking TTS generation in a thread so the event loop stays free
+            # for processing progress update coroutines
             output_path = settings.audio_path / f"ch{chapter.id}_v{voice.id}.wav"
-            tts.generate(
-                text=chapter.text_content,
-                reference_clip=ref_clip,
-                output_path=output_path,
-                language=voice.language,
+            _, timing_data = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    tts.generate,
+                    text=chapter.text_content,
+                    reference_clip=ref_clip,
+                    output_path=output_path,
+                    language=voice.language,
+                    on_progress=on_chunk_progress,
+                ),
             )
 
             # Store relative path for URL serving
@@ -67,13 +92,18 @@ async def generate_tts(ctx, job_id: int):
             except ValueError:
                 relative_output = str(output_path)
 
+            # Total duration from timing data
+            total_duration = timing_data[-1]["end"] if timing_data else None
+
             # Update job
             job.status = "done"
             job.audio_output_path = relative_output
+            job.duration_seconds = total_duration
+            job.timing_data = json.dumps(timing_data, ensure_ascii=False)
             job.error_message = None  # Clear any previous error messages
             job.completed_at = datetime.utcnow()
             await db.commit()
-            logger.info(f"Job {job_id}: Completed successfully")
+            logger.info(f"Job {job_id}: Completed successfully ({len(timing_data)} chunks, {total_duration:.1f}s)")
 
         except Exception as e:
             job.status = "failed"
