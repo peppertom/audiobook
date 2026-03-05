@@ -13,7 +13,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8001:8000"
+      - "8000:8000"
     volumes:
       - ./backend/storage:/app/storage
       - ./backend/app:/app/app
