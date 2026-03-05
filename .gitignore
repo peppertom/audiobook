@@ -1,1 +1,24 @@
 .worktrees/
+
+# Storage (binary files - user data, audio, models)
+storage/
+*.db
+*.wav
+*.mp3
+*.epub
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
