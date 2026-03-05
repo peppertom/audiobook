@@ -4,16 +4,17 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NEXT_PUBLIC_API_URL=http://localhost:9000
     volumes:
       - ./frontend/src:/app/src
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "9000:9000"
     volumes:
       - ./backend/storage:/app/storage
       - ./backend/app:/app/app
@@ -22,8 +23,27 @@ services:
       - AUDIOBOOK_DATABASE_URL=postgresql+asyncpg://audiobook:audiobook_dev@postgres:5432/audiobook
       - AUDIOBOOK_STORAGE_PATH=/app/storage
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    volumes:
+      - ./backend/storage:/app/storage
+      - ./backend/app:/app/app
+    environment:
+      - AUDIOBOOK_REDIS_URL=redis://redis:6379
+      - AUDIOBOOK_DATABASE_URL=postgresql+asyncpg://audiobook:audiobook_dev@postgres:5432/audiobook
+      - AUDIOBOOK_STORAGE_PATH=/app/storage
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -40,9 +60,11 @@ services:
       POSTGRES_DB: audiobook
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audiobook"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:
-
-# Worker runs NATIVELY on Mac for MPS GPU access:
-# cd backend && source .venv/bin/activate && arq app.worker.WorkerSettings

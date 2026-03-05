@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { getJobs, Job } from "@/lib/api";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
 
 const STATUS_LABELS: Record<string, string> = {
   queued: "Queued",

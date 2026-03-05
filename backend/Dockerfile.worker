@@ -1,0 +1,15 @@
+FROM python:3.12-slim
+WORKDIR /app
+
+# System deps: ffmpeg for audio, build tools for C extensions, git for pip installs
+RUN apt-get update && \
+    apt-get install -y ffmpeg git build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install worker dependencies (base + TTS + PyTorch CPU)
+COPY requirements.txt requirements-worker.txt ./
+RUN pip install --no-cache-dir -r requirements-worker.txt
+
+COPY . .
+
+CMD ["python", "-m", "arq", "app.worker.WorkerSettings"]

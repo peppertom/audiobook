@@ -7,7 +7,7 @@ import {
 } from "@/lib/api";
 import VoiceSelector from "@/components/VoiceSelector";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return "0:00";
