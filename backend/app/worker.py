@@ -3,6 +3,7 @@ import asyncio
 import functools
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from arq.connections import RedisSettings
@@ -13,6 +14,11 @@ from app.models import Job, Chapter, Voice
 from app.database import Base
 from app.services.tts_engine import TTSEngine
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -55,18 +61,57 @@ async def generate_tts(ctx, job_id: int):
             await db.commit()
             logger.info(f"Job {job_id}: Generating TTS for chapter '{chapter.title}' ({chapter.word_count} words)")
 
-            # Progress callback — updates DB so frontend can poll.
+            # Progress callback — updates DB with JSON so frontend can poll.
             # Called from a worker thread (since tts.generate is blocking),
             # schedules async DB updates back on the event loop.
             loop = asyncio.get_running_loop()
+            start_time = time.time()
 
-            def on_chunk_progress(chunk_idx, total_chunks, preview):
-                pct = int((chunk_idx / total_chunks) * 100)
-                msg = f"Chunk {chunk_idx + 1}/{total_chunks} ({pct}%) — {preview}..."
-                logger.info(f"Job {job_id}: {msg}")
+            def on_chunk_progress(event, chunk_idx, total_chunks, chunk_word_counts, **kwargs):
+                elapsed = time.time() - start_time
+                total_words = sum(chunk_word_counts)
+
+                if event == "chunk_start":
+                    words_done = sum(chunk_word_counts[:chunk_idx])
+                    preview = kwargs.get("preview", "")
+                elif event == "chunk_done":
+                    words_done = sum(chunk_word_counts[:chunk_idx + 1])
+                    preview = kwargs.get("preview", "")
+                else:
+                    return
+
+                pct = int((words_done / total_words) * 100) if total_words else 0
+
+                # ETA: only estimate after first chunk_done (need real speed data)
+                eta_s = None
+                if event == "chunk_done" and elapsed > 0 and words_done > 0:
+                    words_per_sec = words_done / elapsed
+                    remaining_words = total_words - words_done
+                    eta_s = int(remaining_words / words_per_sec) if words_per_sec > 0 else None
+
+                progress = {
+                    "chunk": chunk_idx + 1,
+                    "total_chunks": total_chunks,
+                    "words_done": words_done,
+                    "total_words": total_words,
+                    "pct": pct,
+                    "elapsed_s": int(elapsed),
+                    "eta_s": eta_s,
+                    "preview": preview,
+                }
+                progress_json = json.dumps(progress, ensure_ascii=False)
+
+                # Format for logs
+                elapsed_fmt = f"{int(elapsed)//60}:{int(elapsed)%60:02d}"
+                eta_fmt = f"~{eta_s//60}:{eta_s%60:02d}" if eta_s is not None else "calculating..."
+                logger.info(
+                    f"Job {job_id}: {words_done}/{total_words} words ({pct}%) "
+                    f"| {elapsed_fmt} elapsed | ETA {eta_fmt} "
+                    f'| "{preview[:60]}..."'
+                )
 
                 async def _update():
-                    job.error_message = msg
+                    job.error_message = progress_json
                     await db.commit()
 
                 asyncio.run_coroutine_threadsafe(_update(), loop).result(timeout=10)
@@ -105,9 +150,10 @@ async def generate_tts(ctx, job_id: int):
             await db.commit()
             logger.info(f"Job {job_id}: Completed successfully ({len(timing_data)} chunks, {total_duration:.1f}s)")
 
-        except Exception as e:
+        except BaseException as e:
+            # BaseException catches CancelledError (arq timeout) + all Exceptions
             job.status = "failed"
-            job.error_message = str(e)
+            job.error_message = f"Timeout — TTS took too long" if isinstance(e, (asyncio.CancelledError, TimeoutError)) else str(e)
             job.completed_at = datetime.utcnow()
             await db.commit()
             logger.error(f"Job {job_id}: Failed with error: {e}")
@@ -141,4 +187,4 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = 1
-    job_timeout = 600
+    job_timeout = 3600  # 1 hour — CPU TTS is ~50x slower than GPU

@@ -18,6 +18,30 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+interface ChunkProgress {
+  chunk: number;
+  total_chunks: number;
+  words_done: number;
+  total_words: number;
+  pct: number;
+  elapsed_s: number;
+  eta_s: number | null;
+  preview: string;
+}
+
+function tryParseProgress(msg: string | null | undefined): ChunkProgress | null {
+  if (!msg) return null;
+  try {
+    const parsed = JSON.parse(msg);
+    if (typeof parsed.chunk === "number" && typeof parsed.total_chunks === "number") {
+      return parsed as ChunkProgress;
+    }
+  } catch {
+    // Not JSON — old-style string message
+  }
+  return null;
+}
+
 function JobRow({
   job,
   onCancel,
@@ -104,7 +128,7 @@ function JobRow({
           </p>
           <p className="text-xs text-gray-500">
             Voice: {job.voice_name || `#${job.voice_id}`}
-            {isProcessing && job.error_message && (
+            {isProcessing && job.error_message && !tryParseProgress(job.error_message) && (
               <span className="text-blue-300 ml-2">{job.error_message}</span>
             )}
             {isFailed && job.error_message && (
@@ -162,6 +186,48 @@ function JobRow({
           </button>
         )}
       </div>
+
+      {/* TTS generation progress */}
+      {isProcessing && (() => {
+        const progress = tryParseProgress(job.error_message);
+        if (!progress) return null;
+        return (
+          <div className="space-y-1.5 pl-12">
+            {/* Progress bar */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-blue-500 rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${progress.pct}%` }}
+                />
+              </div>
+              <span className="text-xs font-medium text-blue-400 tabular-nums w-10 text-right shrink-0">
+                {progress.pct}%
+              </span>
+            </div>
+            {/* Stats line */}
+            <p className="text-xs text-gray-500 tabular-nums">
+              {progress.words_done.toLocaleString()} / {progress.total_words.toLocaleString()} words
+              <span className="mx-1.5 text-gray-700">&bull;</span>
+              {formatTime(progress.elapsed_s)} elapsed
+              {progress.eta_s !== null && (
+                <>
+                  <span className="mx-1.5 text-gray-700">&bull;</span>
+                  <span className="text-blue-300">~{formatTime(progress.eta_s)} remaining</span>
+                </>
+              )}
+              <span className="mx-1.5 text-gray-700">&bull;</span>
+              chunk {progress.chunk}/{progress.total_chunks}
+            </p>
+            {/* Preview text */}
+            {progress.preview && (
+              <p className="text-xs text-gray-600 truncate">
+                &#9659; {progress.preview}
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Audio player with seekable progress bar */}
       {audioUrl && (

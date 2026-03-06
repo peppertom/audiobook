@@ -41,7 +41,9 @@ class TTSEngine:
     def generate(self, text: str, reference_clip: Path, output_path: Path, language: str = "hu", on_progress=None) -> tuple[Path, list[dict]]:
         """Generate speech audio from text using a reference voice clip.
 
-        on_progress: optional callback(chunk_index, total_chunks, chunk_text_preview)
+        on_progress: callback(event, chunk_index, total_chunks, chunk_word_counts, **kw)
+            event: "chunk_start" or "chunk_done"
+            chunk_word_counts: list[int] with word count per chunk
 
         Returns:
             (output_path, timing_data) where timing_data is a list of
@@ -52,12 +54,13 @@ class TTSEngine:
 
         # XTTS-v2 has a context window limit, split long text into chunks
         chunks = self._split_text(text, max_chars=500)
+        chunk_word_counts = [len(c.split()) for c in chunks]
         chunk_paths = []
         chunk_durations = []
 
         for i, chunk in enumerate(chunks):
             if on_progress:
-                on_progress(i, len(chunks), chunk[:80])
+                on_progress("chunk_start", i, len(chunks), chunk_word_counts, preview=chunk[:80])
             chunk_path = output_path.parent / f"{output_path.stem}_chunk_{i}.wav"
             self.model.tts_to_file(
                 text=chunk,
@@ -67,6 +70,8 @@ class TTSEngine:
             )
             chunk_paths.append(chunk_path)
             chunk_durations.append(self._get_wav_duration(chunk_path))
+            if on_progress:
+                on_progress("chunk_done", i, len(chunks), chunk_word_counts)
 
         # Build timing data
         timing_data = []
