@@ -160,3 +160,13 @@ export interface CostEstimate {
   total_words: number; credits_required: number;
   estimated_cost_usd: number; current_balance: number; sufficient_credits: boolean;
 }
+
+// Enriched book for library display (computed client-side)
+export interface BookWithStats extends Book {
+  chapters_done: number;
+  chapters_total: number;
+  total_duration_seconds: number;
+  has_active_jobs: boolean;
+  voice_name?: string;
+  voice_language?: string;
+}

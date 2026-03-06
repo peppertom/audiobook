@@ -5,6 +5,7 @@ import {
   getBook, generateBook, getBookJobs, getChapterText, getVoices,
   BookDetail, Job, Voice, TimingChunk,
 } from "@/lib/api";
+import { usePlayer } from "@/lib/player-context";
 import VoiceSelector from "@/components/VoiceSelector";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
@@ -22,17 +23,22 @@ function ChapterPlayer({
   job,
   bookId,
   chapterId,
+  bookTitle,
+  chapterTitle,
+  chapterNumber,
   isTextOpen,
+  chapters,
 }: {
   job: Job;
   bookId: number;
   chapterId: number;
+  bookTitle: string;
+  chapterTitle: string;
+  chapterNumber: number;
   isTextOpen: boolean;
+  chapters: Array<{ id: number; number: number; title: string; audioUrl: string | null }>;
 }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const player = usePlayer();
 
   // Text + timing
   const [text, setText] = useState<string | null>(null);
@@ -43,6 +49,11 @@ function ChapterPlayer({
   const textContainerRef = useRef<HTMLDivElement>(null);
 
   const audioUrl = `${API_BASE}/${job.audio_output_path}`;
+
+  // Check if this chapter is currently playing
+  const isActiveChapter = player.track?.chapterId === chapterId;
+  const currentTime = isActiveChapter ? player.currentTime : 0;
+  const isPlaying = isActiveChapter && player.isPlaying;
 
   // Parse timing data from job
   useEffect(() => {
@@ -73,7 +84,7 @@ function ChapterPlayer({
 
   // Auto-scroll to active chunk
   useEffect(() => {
-    if (activeChunkRef.current && textContainerRef.current && playing) {
+    if (activeChunkRef.current && textContainerRef.current && isPlaying) {
       const container = textContainerRef.current;
       const el = activeChunkRef.current;
       const containerRect = container.getBoundingClientRect();
@@ -83,33 +94,51 @@ function ChapterPlayer({
         el.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     }
-  }, [activeChunkIndex, playing]);
+  }, [activeChunkIndex, isPlaying]);
 
   const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (playing) {
-      audio.pause();
+    if (isActiveChapter) {
+      player.togglePlay();
     } else {
-      audio.play();
+      player.play({
+        bookId,
+        chapterId,
+        audioUrl,
+        bookTitle,
+        chapterTitle,
+        chapterNumber,
+        voiceName: job.voice_name,
+        chapters,
+      });
     }
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
-    if (!audio || !duration) return;
+    if (!player.duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    audio.currentTime = ratio * duration;
+    player.seek(ratio * player.duration);
   };
 
   // Click on a chunk to seek to it
   const seekToChunk = useCallback((chunkIndex: number) => {
-    const audio = audioRef.current;
-    if (!audio || !timing[chunkIndex]) return;
-    audio.currentTime = timing[chunkIndex].start;
-    if (!playing) audio.play();
-  }, [timing, playing]);
+    if (!timing[chunkIndex]) return;
+    if (!isActiveChapter) {
+      // First start playing this chapter
+      player.play({
+        bookId,
+        chapterId,
+        audioUrl,
+        bookTitle,
+        chapterTitle,
+        chapterNumber,
+        voiceName: job.voice_name,
+        chapters,
+      });
+    }
+    // Small delay to let audio start, then seek
+    setTimeout(() => player.seek(timing[chunkIndex].start), 50);
+  }, [timing, isActiveChapter, player, bookId, chapterId, audioUrl, bookTitle, chapterTitle, chapterNumber, job.voice_name, chapters]);
 
   // Render text with chunk highlighting
   const renderHighlightedText = () => {
@@ -151,13 +180,15 @@ function ChapterPlayer({
   return (
     <>
       {/* Audio controls */}
-      <div className="flex items-center gap-3 mt-2">
+      <div className={`flex items-center gap-3 mt-2 p-2 rounded-lg transition-colors ${isActiveChapter ? "bg-blue-900/20 border border-blue-800/50" : ""}`}>
         <button
           onClick={togglePlay}
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-500 transition shrink-0"
-          title={playing ? "Pause" : "Play"}
+          className={`w-8 h-8 flex items-center justify-center rounded-full transition shrink-0 ${
+            isActiveChapter ? "bg-blue-600 hover:bg-blue-500" : "bg-green-600 hover:bg-green-500"
+          }`}
+          title={isPlaying ? "Pause" : "Play"}
         >
-          {playing ? (
+          {isPlaying ? (
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
               <rect x="6" y="4" width="4" height="16" rx="1" />
               <rect x="14" y="4" width="4" height="16" rx="1" />
@@ -169,32 +200,24 @@ function ChapterPlayer({
           )}
         </button>
         <span className="text-xs text-gray-500 tabular-nums w-10 text-right shrink-0">
-          {formatTime(currentTime)}
+          {formatTime(isActiveChapter ? currentTime : 0)}
         </span>
         <div
           className="flex-1 h-1.5 bg-gray-800 rounded-full cursor-pointer group relative"
           onClick={handleSeek}
         >
           <div
-            className="h-full bg-green-500 rounded-full relative transition-[width] duration-100"
-            style={{ width: duration ? `${(currentTime / duration) * 100}%` : "0%" }}
+            className={`h-full rounded-full relative transition-[width] duration-100 ${
+              isActiveChapter ? "bg-blue-500" : "bg-green-500"
+            }`}
+            style={{ width: player.duration ? `${(currentTime / player.duration) * 100}%` : "0%" }}
           >
             <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow" />
           </div>
         </div>
         <span className="text-xs text-gray-500 tabular-nums w-10 shrink-0">
-          {formatTime(duration)}
+          {formatTime(isActiveChapter ? player.duration : (job.duration_seconds ?? 0))}
         </span>
-        <audio
-          ref={audioRef}
-          src={audioUrl}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => { setPlaying(false); setCurrentTime(0); }}
-          onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime ?? 0)}
-          onLoadedMetadata={() => setDuration(audioRef.current?.duration ?? 0)}
-          preload="metadata"
-        />
       </div>
 
       {/* Text panel with highlight sync */}
@@ -315,6 +338,17 @@ export default function BookDetailPage() {
     }
   }
 
+  // Build chapters list for player context
+  const chaptersForPlayer = book.chapters.map((ch) => {
+    const doneJob = doneJobsByChapter.get(ch.id);
+    return {
+      id: ch.id,
+      number: ch.chapter_number,
+      title: ch.title,
+      audioUrl: doneJob ? `${API_BASE}/${doneJob.audio_output_path}` : null,
+    };
+  });
+
   const doneCount = doneJobsByChapter.size;
   const hasMultipleVoices = readyVoices.length > 1;
 
@@ -360,7 +394,9 @@ export default function BookDetailPage() {
             return (
               <li
                 key={ch.id}
-                className="bg-gray-900 rounded-lg px-4 py-3"
+                className={`bg-gray-900 rounded-lg px-4 py-3 transition-colors ${
+                  doneJob ? "border-l-2 border-green-600" : ""
+                }`}
               >
                 <div className="flex justify-between items-center gap-2">
                   <button
@@ -406,7 +442,11 @@ export default function BookDetailPage() {
                     job={doneJob}
                     bookId={book.id}
                     chapterId={ch.id}
+                    bookTitle={book.title}
+                    chapterTitle={ch.title}
+                    chapterNumber={ch.chapter_number}
                     isTextOpen={isExpanded}
+                    chapters={chaptersForPlayer}
                   />
                 ) : (
                   isExpanded && <ChapterTextView bookId={book.id} chapterId={ch.id} />

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
-import { Navbar } from "@/components/Navbar";
+import { AppShell } from "@/components/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Audiobook",
+  title: "AudioBookAI",
   description: "Turn your books into audiobooks with custom voices",
 };
 
@@ -27,11 +27,10 @@ export default function RootLayout({
   return (
     <html lang="hu">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 text-gray-100 min-h-screen`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 text-gray-100`}
       >
         <AuthProvider>
-          <Navbar />
-          <main className="max-w-6xl mx-auto px-6 py-8">{children}</main>
+          <AppShell>{children}</AppShell>
         </AuthProvider>
       </body>
     </html>
