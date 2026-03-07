@@ -13,6 +13,7 @@ from app.config import settings, BACKEND_ROOT
 from app.models import Job, Chapter, Voice
 from app.database import Base
 from app.services.tts_engine import TTSEngine
+from app.services.llm_annotator import LLMAnnotator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +57,20 @@ async def generate_tts(ctx, job_id: int):
                 ref_clip = BACKEND_ROOT / ref_clip
             if not ref_clip.exists():
                 raise ValueError(f"Reference clip not found: {ref_clip}")
+
+            # Fejezet-szintű érzelmi ív elemzés (ha még nincs)
+            annotator: LLMAnnotator = ctx.get("llm_annotator")
+            if annotator and not chapter.emotional_arc:
+                logger.info(f"Job {job_id}: Running LLM arc analysis...")
+                arc = await annotator.analyze_chapter_arc(chapter.text_content)
+                chapter.emotional_arc = json.dumps({
+                    "dominant_emotion": arc.dominant_emotion,
+                    "pacing": arc.pacing,
+                    "intensity": arc.intensity,
+                    "narrator_note": arc.narrator_note,
+                }, ensure_ascii=False)
+                await db.commit()
+                logger.info(f"Job {job_id}: Arc: {arc.dominant_emotion} | intensity={arc.intensity}")
 
             job.error_message = f"Generating audio for chapter: {chapter.title[:50]}..."
             await db.commit()
@@ -181,6 +196,10 @@ async def startup(ctx):
     logger.info(f"TTS model loaded on device: {tts.device}")
 
     ctx["tts_engine"] = tts
+    ctx["llm_annotator"] = LLMAnnotator(
+        base_url=settings.ollama_url,
+        model=settings.ollama_model,
+    )
     ctx["db_engine"] = create_async_engine(settings.database_url, echo=False)
 
 
