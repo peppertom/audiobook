@@ -11,6 +11,7 @@ storage/
 __pycache__/
 *.pyc
 .venv/
+worker-venv/
 *.egg-info/
 
 # Node
