@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.config import settings, BACKEND_ROOT
 from app.models import Job, Chapter, Voice
 from app.database import Base
-from app.services.tts_engine import TTSEngine
+from app.services.tts_engine import TTSEngine, select_reference_clip, normalize_audio_ebu_r128
 from app.services.llm_annotator import LLMAnnotator
 
 logging.basicConfig(
@@ -131,6 +131,22 @@ async def generate_tts(ctx, job_id: int):
 
                 asyncio.run_coroutine_threadsafe(_update(), loop).result(timeout=10)
 
+            # Érzelem-bank alapú referencia klip kiválasztása
+            emotion_bank = json.loads(voice.emotion_bank) if voice.emotion_bank else {}
+            dominant_emotion = "neutral"
+            if chapter.emotional_arc:
+                arc_data = json.loads(chapter.emotional_arc)
+                dominant_emotion = arc_data.get("dominant_emotion", "neutral")
+            ref_clip = select_reference_clip(
+                emotion_bank=emotion_bank,
+                emotion=dominant_emotion,
+                default=str(ref_clip),
+            )
+            if not ref_clip.is_absolute():
+                ref_clip = BACKEND_ROOT / ref_clip
+            if not ref_clip.exists():
+                raise ValueError(f"Reference clip not found: {ref_clip}")
+
             # Build TTS text: use normalized segments if available, else raw text
             if chapter.segments:
                 raw_segments = json.loads(chapter.segments)
@@ -154,6 +170,16 @@ async def generate_tts(ctx, job_id: int):
                     on_progress=on_chunk_progress,
                 ),
             )
+
+            # Post-processing: EBU R128 normalizálás (non-fatal)
+            try:
+                normalized_path = output_path.parent / f"{output_path.stem}_norm.wav"
+                normalize_audio_ebu_r128(output_path, normalized_path)
+                output_path.unlink()
+                normalized_path.rename(output_path)
+                logger.info(f"Job {job_id}: EBU R128 normalization complete")
+            except Exception as e:
+                logger.warning(f"Job {job_id}: Normalization failed (non-fatal): {e}")
 
             # Store relative path for URL serving
             try:
