@@ -357,7 +357,14 @@ export default function BookDetailPage() {
           )}
         </h2>
         <ul className="space-y-2">
-          {book.chapters.map((ch) => {
+          {[...book.chapters]
+            .sort((a, b) => {
+              const aDone = doneJobsByChapter.has(a.id) ? 0 : 1;
+              const bDone = doneJobsByChapter.has(b.id) ? 0 : 1;
+              if (aDone !== bDone) return aDone - bDone;
+              return a.chapter_number - b.chapter_number;
+            })
+            .map((ch) => {
             const doneJob = doneJobsByChapter.get(ch.id);
             const isExpanded = expandedChapters.has(ch.id);
             const currentVoice = getChapterVoice(ch.id);
@@ -447,7 +454,7 @@ export default function BookDetailPage() {
               </li>
             );
           })}
-        </ul>
+          </ul>
       </div>
     </div>
   );
