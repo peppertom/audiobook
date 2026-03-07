@@ -41,7 +41,7 @@ async function fetchWithAuth(url: string, options?: RequestInit): Promise<Respon
 }
 
 // Books
-export const getBooks = () => fetchApi<Book[]>("/api/books/");
+export const getBooks = () => fetchApi<Book[]>("/api/books");
 export const getBook = (id: number) => fetchApi<BookDetail>(`/api/books/${id}`);
 export const uploadBook = async (file: File) => {
   const form = new FormData();
@@ -58,9 +58,9 @@ export const getBookCostEstimate = (bookId: number) =>
   fetchApi<CostEstimate>(`/api/books/${bookId}/cost-estimate`);
 
 // Voices
-export const getVoices = () => fetchApi<Voice[]>("/api/voices/");
+export const getVoices = () => fetchApi<Voice[]>("/api/voices");
 export const createVoice = (data: { name: string; language: string; source: string }) =>
-  fetchApi<Voice>("/api/voices/", { method: "POST", body: JSON.stringify(data) });
+  fetchApi<Voice>("/api/voices", { method: "POST", body: JSON.stringify(data) });
 export const uploadReferenceClip = async (voiceId: number, file: File) => {
   const form = new FormData();
   form.append("file", file);
@@ -116,8 +116,8 @@ export async function deleteEmotionClip(voiceId: number, emotion: string): Promi
 }
 
 // Jobs
-export const getJobs = () => fetchApi<Job[]>("/api/jobs/");
-export const getBookJobs = (bookId: number) => fetchApi<Job[]>(`/api/jobs/?book_id=${bookId}`);
+export const getJobs = () => fetchApi<Job[]>("/api/jobs");
+export const getBookJobs = (bookId: number) => fetchApi<Job[]>(`/api/jobs?book_id=${bookId}`);
 export const generateBook = (bookId: number, voiceId: number, chapterVoices?: Record<number, number>) =>
   fetchApi<Job[]>(`/api/jobs/generate-book/${bookId}`, {
     method: "POST",
@@ -126,9 +126,9 @@ export const generateBook = (bookId: number, voiceId: number, chapterVoices?: Re
 
 // Playback
 export const getPlaybackState = (bookId: number, voiceId: number) =>
-  fetchApi<PlaybackState>(`/api/playback/?book_id=${bookId}&voice_id=${voiceId}`);
+  fetchApi<PlaybackState>(`/api/playback?book_id=${bookId}&voice_id=${voiceId}`);
 export const savePlaybackState = (state: PlaybackStateUpdate) =>
-  fetchApi<PlaybackState>("/api/playback/", { method: "PUT", body: JSON.stringify(state) });
+  fetchApi<PlaybackState>("/api/playback", { method: "PUT", body: JSON.stringify(state) });
 
 // User
 export const getCurrentUser = () => fetchApi<UserProfile>("/api/users/me");
