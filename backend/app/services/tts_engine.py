@@ -108,8 +108,9 @@ class TTSEngine:
         if not self.model:
             raise RuntimeError("TTS model not loaded. Call load_model() first.")
 
-        # XTTS-v2 has a context window limit, split long text into chunks
-        chunks = self._split_text(text, max_chars=500)
+        # XTTS-v2 hard limit: 400 tokens. Hungarian is ~1 char/token so
+        # keep chunks well under 250 chars to stay safe.
+        chunks = self._split_text(text, max_chars=220)
         chunk_word_counts = [len(c.split()) for c in chunks]
         chunk_paths = []
         chunk_durations = []
@@ -150,20 +151,59 @@ class TTSEngine:
 
         return output_path, timing_data
 
-    def _split_text(self, text: str, max_chars: int = 500) -> list[str]:
-        """Split text into chunks at sentence boundaries."""
-        sentences = []
-        current = ""
-        for sentence in text.replace("\n", " ").split(". "):
-            candidate = f"{current}. {sentence}".strip() if current else sentence
-            if len(candidate) > max_chars and current:
-                sentences.append(current.strip())
-                current = sentence
+    def _split_text(self, text: str, max_chars: int = 220) -> list[str]:
+        """Split text into chunks small enough for XTTS's 400-token limit.
+
+        Strategy (in order):
+        1. Split at sentence boundaries (. ! ? … and em-dash dialogue lines)
+        2. If a sentence still exceeds max_chars, split further at commas
+        3. If a comma-piece still exceeds max_chars, hard-split at word boundary
+        """
+        import re
+
+        # Normalise newlines, collapse whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+
+        # Step 1: split at sentence boundaries, keeping the delimiter
+        raw_sentences = re.split(r"(?<=[.!?…])\s+|(?<=–)\s+|(?<=—)\s+", text)
+
+        pieces: list[str] = []
+        for sent in raw_sentences:
+            sent = sent.strip()
+            if not sent:
+                continue
+            if len(sent) <= max_chars:
+                pieces.append(sent)
             else:
-                current = candidate
-        if current.strip():
-            sentences.append(current.strip())
-        return sentences if sentences else [text]
+                # Step 2: split long sentences at commas
+                parts = re.split(r",\s*", sent)
+                buf = ""
+                for part in parts:
+                    candidate = f"{buf}, {part}".strip(", ") if buf else part
+                    if len(candidate) <= max_chars:
+                        buf = candidate
+                    else:
+                        if buf:
+                            pieces.append(buf.strip())
+                        # Step 3: hard word-boundary split for very long parts
+                        if len(part) > max_chars:
+                            words = part.split()
+                            buf = ""
+                            for word in words:
+                                trial = f"{buf} {word}".strip() if buf else word
+                                if len(trial) <= max_chars:
+                                    buf = trial
+                                else:
+                                    if buf:
+                                        pieces.append(buf)
+                                    buf = word
+                            buf = buf  # carry forward
+                        else:
+                            buf = part
+                if buf.strip():
+                    pieces.append(buf.strip())
+
+        return [p for p in pieces if p] or [text]
 
     def _concatenate_audio(self, paths: list[Path], output: Path, seg_types: list[str] | None = None):
         """Concatenate WAV files using pydub with calibrated pauses between segments."""
