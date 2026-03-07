@@ -40,7 +40,6 @@ export function EmotionBankRecorder({ voiceId, emotionBank, onUpdate }: EmotionB
       mr.start();
       setRecording(emotion);
 
-      // 10 second countdown then auto-stop
       let secs = 10;
       setCountdown(secs);
       const timer = setInterval(() => {
@@ -91,47 +90,76 @@ export function EmotionBankRecorder({ voiceId, emotionBank, onUpdate }: EmotionB
     }
   }
 
+  const doneCount = EMOTIONS.filter((e) => emotionBank[e]).length;
+
   return (
     <div className="space-y-3">
-      <h3 className="font-semibold text-sm text-gray-700">Érzelem-bank hangminták</h3>
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-400">Érzelem-bank</span>
+        <span className="text-xs text-gray-500">{doneCount} / {EMOTIONS.length} hangminta</span>
+      </div>
+
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</div>
+        <div className="text-sm text-red-400 bg-red-900/20 border border-red-500/20 px-3 py-2 rounded-lg">
+          {error}
+        </div>
       )}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {EMOTIONS.map((emotion) => {
           const hasClip = Boolean(emotionBank[emotion]);
           const isRecording = recording === emotion;
           const isUploading = uploading === emotion;
+          const busy = isRecording || isUploading || (!!recording && !isRecording) || (!!uploading && !isUploading);
 
           return (
             <div
               key={emotion}
-              className={`rounded-lg border p-3 text-sm ${hasClip ? "border-green-300 bg-green-50" : "border-gray-200 bg-white"}`}
+              className={`rounded-lg border p-3 flex flex-col gap-2 transition-colors ${
+                hasClip
+                  ? "border-green-500/30 bg-green-900/10"
+                  : "border-gray-700 bg-gray-800/60"
+              }`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium">
-                  {hasClip && <span className="text-green-600 mr-1">&#10003;</span>}
-                  {EMOTION_LABELS[emotion]}
-                </span>
+              {/* Header row */}
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {hasClip && (
+                    <svg className="w-3.5 h-3.5 text-green-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  <span className={`text-sm font-medium truncate ${hasClip ? "text-green-300" : "text-gray-200"}`}>
+                    {EMOTION_LABELS[emotion]}
+                  </span>
+                </div>
                 {hasClip && (
                   <button
                     onClick={() => handleDelete(emotion)}
-                    className="text-xs text-red-500 hover:text-red-700"
+                    className="text-gray-500 hover:text-red-400 transition shrink-0"
+                    title="Törlés"
                   >
-                    Töröl
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
                 )}
               </div>
+
+              {/* Prompt text */}
               {emotionTexts[emotion] && (
-                <p className="text-xs text-gray-500 italic mb-2 line-clamp-2">
+                <p className="text-xs text-gray-500 italic leading-relaxed line-clamp-2">
                   {emotionTexts[emotion]}
                 </p>
               )}
-              <div className="flex gap-2">
+
+              {/* Action buttons */}
+              <div className="flex gap-1.5 mt-auto">
                 <button
-                  disabled={isRecording || isUploading}
+                  disabled={busy}
                   onClick={() => fileInputRefs.current[emotion]?.click()}
-                  className="flex-1 rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+                  className="flex-1 rounded-lg border border-gray-600 px-2 py-1.5 text-xs text-gray-300 hover:bg-gray-700 hover:border-gray-500 transition disabled:opacity-30"
+                  title="Fájl feltöltése"
                 >
                   Feltöltés
                 </button>
@@ -145,17 +173,17 @@ export function EmotionBankRecorder({ voiceId, emotionBank, onUpdate }: EmotionB
                 {isRecording ? (
                   <button
                     onClick={stopRecording}
-                    className="flex-1 rounded bg-red-500 text-white px-2 py-1 text-xs animate-pulse"
+                    className="flex-1 rounded-lg bg-red-600 text-white px-2 py-1.5 text-xs animate-pulse hover:bg-red-500 transition"
                   >
-                    Stop ({countdown}s)
+                    Stop {countdown}s
                   </button>
                 ) : (
                   <button
-                    disabled={isUploading}
+                    disabled={busy}
                     onClick={() => startRecording(emotion)}
-                    className="flex-1 rounded bg-indigo-600 text-white px-2 py-1 text-xs hover:bg-indigo-700 disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-blue-600 text-white px-2 py-1.5 text-xs hover:bg-blue-500 transition disabled:opacity-30"
                   >
-                    {isUploading ? "Feltöltés..." : "Felvétel"}
+                    {isUploading ? "..." : "Felvétel"}
                   </button>
                 )}
               </div>
