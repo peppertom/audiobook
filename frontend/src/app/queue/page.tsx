@@ -407,9 +407,17 @@ export default function QueuePage() {
       )}
 
       <div className="space-y-2">
-        {jobs.map((job) => (
-          <JobRow key={job.id} job={job} onCancel={cancelJob} onStart={startJob} />
-        ))}
+        {[...jobs]
+          .sort((a, b) => {
+            const order = { processing: 0, queued: 1, done: 2, failed: 3 };
+            const ao = order[a.status as keyof typeof order] ?? 4;
+            const bo = order[b.status as keyof typeof order] ?? 4;
+            if (ao !== bo) return ao - bo;
+            return (a.chapter_number ?? 0) - (b.chapter_number ?? 0);
+          })
+          .map((job) => (
+            <JobRow key={job.id} job={job} onCancel={cancelJob} onStart={startJob} />
+          ))}
       </div>
 
       {jobs.length === 0 && (
