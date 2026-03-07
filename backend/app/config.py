@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     free_signup_credits: int = 3
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:7b-instruct"
 
     model_config = {"env_prefix": "AUDIOBOOK_"}
 
