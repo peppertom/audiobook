@@ -14,7 +14,7 @@ from app.schemas import VoiceCreate, VoiceOut
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".wma"}
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".webm"}
 
 
 def convert_to_wav(input_path: Path, output_path: Path) -> Path:
