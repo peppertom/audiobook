@@ -92,7 +92,7 @@ worker: worker-check
 	AUDIOBOOK_REDIS_URL=redis://localhost:6379 \
 	AUDIOBOOK_DATABASE_URL=postgresql+asyncpg://audiobook:audiobook_dev@localhost:5433/audiobook \
 	AUDIOBOOK_STORAGE_PATH=$(CURDIR)/backend/storage \
-	$(CURDIR)/$(WORKER_PYTHON) -m arq app.worker.WorkerSettings
+	$(CURDIR)/backend/worker-venv/bin/arq app.worker.WorkerSettings
 
 # Local worker — feat/production-quality-pipeline worktree code
 worker-new: worker-check
@@ -105,7 +105,7 @@ worker-new: worker-check
 	AUDIOBOOK_REDIS_URL=redis://localhost:6379 \
 	AUDIOBOOK_DATABASE_URL=postgresql+asyncpg://audiobook:audiobook_dev@localhost:5433/audiobook \
 	AUDIOBOOK_STORAGE_PATH=$(CURDIR)/backend/storage \
-	$(CURDIR)/$(WORKER_PYTHON) -m arq app.worker.WorkerSettings
+	$(CURDIR)/backend/worker-venv/bin/arq app.worker.WorkerSettings
 
 # Check that worker-venv exists
 worker-check:
