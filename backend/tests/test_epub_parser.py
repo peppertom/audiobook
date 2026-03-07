@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 from ebooklib import epub
-from app.services.epub_parser import parse_epub
+from app.services.epub_parser import extract_segments_from_html, parse_epub
 
 
 def create_test_epub(path: Path) -> Path:
@@ -53,3 +53,35 @@ def test_parse_epub_strips_html(tmp_path):
     text = result["chapters"][0]["text"]
     assert "<" not in text
     assert ">" not in text
+
+
+def test_extract_heading():
+    html = "<html><body><h2>Első fejezet</h2><p>Szöveg itt.</p></body></html>"
+    segments = extract_segments_from_html(html)
+    headings = [s for s in segments if s["is_heading"]]
+    assert len(headings) == 1
+    assert headings[0]["text"] == "Első fejezet"
+
+
+def test_extract_dialogue_paragraph():
+    html = '<html><body><p>\u201eGyere!\u201d \u2014 ki\u00e1ltotta.</p></body></html>'
+    segments = extract_segments_from_html(html)
+    assert segments[0]["type"] == "dialogue"
+
+
+def test_extract_italic_as_inner_monologue():
+    html = "<html><body><p><em>Sosem fogja meg\u00e9rteni.</em></p></body></html>"
+    segments = extract_segments_from_html(html)
+    assert segments[0]["type"] == "inner_monologue"
+
+
+def test_skips_empty_paragraphs():
+    html = "<html><body><p>   </p><p>Val\u00f3di sz\u00f6veg.</p></body></html>"
+    segments = extract_segments_from_html(html)
+    assert len(segments) == 1
+
+
+def test_word_count_correct():
+    html = "<html><body><p>Egy k\u00e9t h\u00e1rom.</p></body></html>"
+    segments = extract_segments_from_html(html)
+    assert segments[0]["word_count"] == 3
