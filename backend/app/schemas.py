@@ -117,6 +117,7 @@ class VoiceOut(BaseModel):
     sample_audio_path: str | None
     reference_clip_path: str | None
     source: str
+    emotion_bank: str | None = None  # JSON string
     created_at: datetime
     model_config = {"from_attributes": True}
 

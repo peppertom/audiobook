@@ -1,3 +1,4 @@
+import io
 import pytest
 from unittest.mock import patch
 
@@ -77,3 +78,56 @@ async def test_delete_voice(client):
     voice_id = create.json()["id"]
     response = await client.delete(f"/api/voices/{voice_id}")
     assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_upload_emotion_clip(client, db_session):
+    from app.models import Voice
+    voice = Voice(name="Test", language="hu")
+    db_session.add(voice)
+    await db_session.commit()
+    await db_session.refresh(voice)
+
+    fake_wav = b"RIFF" + b"\x00" * 36
+    with patch("app.routers.voices.convert_to_wav") as mock_convert:
+        mock_convert.return_value = None
+        from app.config import settings
+        clip_path = settings.voices_path / f"voice_{voice.id}_emo_neutral.wav"
+        clip_path.parent.mkdir(parents=True, exist_ok=True)
+        clip_path.write_bytes(fake_wav)
+
+        response = await client.post(
+            f"/api/voices/{voice.id}/emotion-clips/neutral",
+            files={"file": ("test.wav", io.BytesIO(fake_wav), "audio/wav")},
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["emotion_bank"] is not None
+    import json
+    bank = json.loads(data["emotion_bank"])
+    assert "neutral" in bank
+
+
+@pytest.mark.asyncio
+async def test_upload_invalid_emotion(client, db_session):
+    from app.models import Voice
+    voice = Voice(name="Test", language="hu")
+    db_session.add(voice)
+    await db_session.commit()
+    await db_session.refresh(voice)
+
+    fake_wav = b"RIFF" + b"\x00" * 36
+    response = await client.post(
+        f"/api/voices/{voice.id}/emotion-clips/invalid_emotion",
+        files={"file": ("test.wav", io.BytesIO(fake_wav), "audio/wav")},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_emotion_texts(client):
+    response = await client.get("/api/voices/emotion-texts")
+    assert response.status_code == 200
+    data = response.json()
+    assert "neutral" in data
+    assert "happy" in data

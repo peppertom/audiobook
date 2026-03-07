@@ -1,7 +1,9 @@
+import json
 import logging
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Literal
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +45,17 @@ def to_relative_path(abs_path: Path) -> str:
         # Fallback: just use storage/... format
         return str(abs_path)
 
+EMOTION_CATEGORIES = Literal["neutral", "happy", "sad", "tense", "angry", "whisper"]
+
+EMOTION_TEXTS = {
+    "neutral": "A szobában csend volt. Az ablakon átszűrődő fény lassan kúszott végig a padlón, és minden úgy állt, ahogy előző este hagyta.",
+    "happy": "Végre megérkeztek! Azt hitte, ez a nap soha nem jön el, mégis itt álltak, ragyogó arccal, tele nevetéssel és izgalommal.",
+    "sad": "Nem értette, hogyan lehet valaki egyszerre ilyen közel és ilyen messze. A levelek ott hevertek az asztalon, olvasatlanul.",
+    "tense": "Valaki a folyosón volt. A lélegzetét visszafojtva figyelt — egy lépés, aztán csend. Aztán megint egy lépés, közelebb.",
+    "angry": "Elege lett. Minden egyes alkalommal ugyanez történt, és most már nem volt hajlandó szó nélkül elmenni mellette.",
+    "whisper": "Hallod? — suttogta, és közelebb hajolt. — Ne mondd senkinek. Ez csak közöttünk marad, rendben?",
+}
+
 router = APIRouter(prefix="/api/voices", tags=["voices"])
 
 
@@ -59,6 +72,12 @@ async def create_voice(voice: VoiceCreate, db: AsyncSession = Depends(get_db)):
 async def list_voices(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Voice).order_by(Voice.created_at.desc()))
     return result.scalars().all()
+
+
+@router.get("/emotion-texts")
+async def get_emotion_texts():
+    """Return the prewritten texts for each emotion category."""
+    return EMOTION_TEXTS
 
 
 @router.get("/{voice_id}", response_model=VoiceOut)
@@ -129,6 +148,66 @@ async def create_voice_from_youtube(
     voice.sample_audio_path = str(vocals_path)
     voice.source = "youtube"
     await db.commit()
+    await db.refresh(voice)
+    return voice
+
+
+@router.post("/{voice_id}/emotion-clips/{emotion}", response_model=VoiceOut)
+async def upload_emotion_clip(
+    voice_id: int,
+    emotion: EMOTION_CATEGORIES,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload an audio clip for a specific emotion category."""
+    result = await db.execute(select(Voice).where(Voice.id == voice_id))
+    voice = result.scalar_one_or_none()
+    if not voice:
+        raise HTTPException(404, "Voice not found")
+
+    filename = file.filename or "clip.wav"
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(400, f"Unsupported format. Allowed: {', '.join(ALLOWED_AUDIO_EXTENSIONS)}")
+
+    settings.voices_path.mkdir(parents=True, exist_ok=True)
+    upload_path = settings.voices_path / f"voice_{voice_id}_emo_{emotion}_upload{ext}"
+    with open(upload_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    clip_path = settings.voices_path / f"voice_{voice_id}_emo_{emotion}.wav"
+    convert_to_wav(upload_path, clip_path)
+
+    bank = json.loads(voice.emotion_bank) if voice.emotion_bank else {}
+    bank[emotion] = to_relative_path(clip_path)
+    voice.emotion_bank = json.dumps(bank)
+
+    await db.commit()
+    await db.refresh(voice)
+    return voice
+
+
+@router.delete("/{voice_id}/emotion-clips/{emotion}", response_model=VoiceOut)
+async def delete_emotion_clip(
+    voice_id: int,
+    emotion: EMOTION_CATEGORIES,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Voice).where(Voice.id == voice_id))
+    voice = result.scalar_one_or_none()
+    if not voice:
+        raise HTTPException(404, "Voice not found")
+
+    if voice.emotion_bank:
+        bank = json.loads(voice.emotion_bank)
+        clip_rel = bank.pop(emotion, None)
+        voice.emotion_bank = json.dumps(bank)
+        await db.commit()
+        if clip_rel:
+            clip_path = BACKEND_ROOT / clip_rel
+            if clip_path.exists():
+                clip_path.unlink()
+
     await db.refresh(voice)
     return voice
 

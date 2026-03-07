@@ -101,6 +101,8 @@ class Voice(Base):
     source: Mapped[str] = mapped_column(String(50), default="upload")  # youtube|upload|preset
     user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
+    emotion_bank: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON: {"neutral": "storage/voices/...", "happy": "...", "sad": "...", ...}
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
