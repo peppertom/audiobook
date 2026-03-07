@@ -8,6 +8,7 @@ import {
   createVoiceFromYoutube,
   Voice,
 } from "@/lib/api";
+import { EmotionBankRecorder } from "@/components/EmotionBankRecorder";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -15,10 +16,12 @@ function VoiceCard({
   voice,
   onUpdate,
   onDelete,
+  onRefresh,
 }: {
   voice: Voice;
   onUpdate: (v: Voice) => void;
   onDelete: (id: number) => void;
+  onRefresh: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -172,6 +175,15 @@ function VoiceCard({
           </button>
         </div>
       )}
+
+      {/* Emotion bank recorder */}
+      <div className="pt-1 border-t border-gray-800">
+        <EmotionBankRecorder
+          voiceId={voice.id}
+          emotionBank={voice.emotion_bank ? JSON.parse(voice.emotion_bank) : {}}
+          onUpdate={onRefresh}
+        />
+      </div>
     </div>
   );
 }
@@ -199,6 +211,10 @@ export default function VoicesPage() {
 
   const handleUpdate = (updated: Voice) => {
     setVoices((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
+  };
+
+  const refreshVoices = () => {
+    getVoices().then(setVoices).catch(() => {});
   };
 
   const handleDelete = async (id: number) => {
@@ -238,6 +254,7 @@ export default function VoicesPage() {
             voice={voice}
             onUpdate={handleUpdate}
             onDelete={handleDelete}
+            onRefresh={refreshVoices}
           />
         ))}
       </div>
