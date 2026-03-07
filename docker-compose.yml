@@ -4,9 +4,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:9000
+      - BACKEND_INTERNAL_URL=http://backend:9000
+      - NEXT_PUBLIC_API_URL=https://4fe5-2a02-ab88-278f-d800-100f-3c00-9829-2918.ngrok-free.app
     volumes:
       - ./frontend/src:/app/src
+      - ./frontend/next.config.ts:/app/next.config.ts
     depends_on:
       backend:
         condition: service_started
@@ -22,6 +24,7 @@ services:
       - AUDIOBOOK_REDIS_URL=redis://redis:6379
       - AUDIOBOOK_DATABASE_URL=postgresql+asyncpg://audiobook:audiobook_dev@postgres:5432/audiobook
       - AUDIOBOOK_STORAGE_PATH=/app/storage
+      - AUDIOBOOK_CORS_ORIGINS=*
     depends_on:
       redis:
         condition: service_started

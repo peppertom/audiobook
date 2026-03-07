@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 // --- Auth helpers ---
 function getToken(): string | null {

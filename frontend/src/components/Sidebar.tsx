@@ -46,7 +46,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         }`}
       >
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-gray-800">
+        <div className="h-14 flex items-center px-5 border-b border-gray-800">
           <Link href="/" className="text-xl font-bold" onClick={onClose}>
             🎧 AudioBookAI
           </Link>

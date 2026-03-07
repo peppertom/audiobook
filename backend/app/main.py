@@ -17,11 +17,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Audiobook", lifespan=lifespan)
+app = FastAPI(title="Audiobook", lifespan=lifespan, redirect_slashes=False)
 
+cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"] if "*" in cors_origins else cors_origins,
+    allow_credentials="*" not in cors_origins,  # credentials incompatible with wildcard
     allow_methods=["*"],
     allow_headers=["*"],
 )

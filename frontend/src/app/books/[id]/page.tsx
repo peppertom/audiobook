@@ -8,7 +8,7 @@ import {
 import { usePlayer } from "@/lib/player-context";
 import VoiceSelector from "@/components/VoiceSelector";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return "0:00";
@@ -17,16 +17,15 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-// ─── Audio player with synced text highlighting ─────────────────────────────
+// ─── Simple chapter play/pause button with synced text highlighting ─────────
 
-function ChapterPlayer({
+function ChapterPlayButton({
   job,
   bookId,
   chapterId,
   bookTitle,
   chapterTitle,
   chapterNumber,
-  isTextOpen,
   chapters,
 }: {
   job: Job;
@@ -35,66 +34,13 @@ function ChapterPlayer({
   bookTitle: string;
   chapterTitle: string;
   chapterNumber: number;
-  isTextOpen: boolean;
   chapters: Array<{ id: number; number: number; title: string; audioUrl: string | null }>;
 }) {
   const player = usePlayer();
-
-  // Text + timing
-  const [text, setText] = useState<string | null>(null);
-  const [textLoading, setTextLoading] = useState(false);
-  const [textLoaded, setTextLoaded] = useState(false);
-  const [timing, setTiming] = useState<TimingChunk[]>([]);
-  const activeChunkRef = useRef<HTMLSpanElement>(null);
-  const textContainerRef = useRef<HTMLDivElement>(null);
-
   const audioUrl = `${API_BASE}/${job.audio_output_path}`;
 
-  // Check if this chapter is currently playing
   const isActiveChapter = player.track?.chapterId === chapterId;
-  const currentTime = isActiveChapter ? player.currentTime : 0;
   const isPlaying = isActiveChapter && player.isPlaying;
-
-  // Parse timing data from job
-  useEffect(() => {
-    if (job.timing_data) {
-      try {
-        setTiming(JSON.parse(job.timing_data));
-      } catch {
-        setTiming([]);
-      }
-    }
-  }, [job.timing_data]);
-
-  // Load text when panel opens
-  useEffect(() => {
-    if (isTextOpen && !textLoaded && !textLoading) {
-      setTextLoading(true);
-      getChapterText(bookId, chapterId)
-        .then((data) => { setText(data.text_content); setTextLoaded(true); })
-        .catch(() => { setText("Failed to load text."); setTextLoaded(true); })
-        .finally(() => setTextLoading(false));
-    }
-  }, [isTextOpen, textLoaded, textLoading, bookId, chapterId]);
-
-  // Find active chunk index
-  const activeChunkIndex = timing.length > 0
-    ? timing.findIndex((c) => currentTime >= c.start && currentTime < c.end)
-    : -1;
-
-  // Auto-scroll to active chunk
-  useEffect(() => {
-    if (activeChunkRef.current && textContainerRef.current && isPlaying) {
-      const container = textContainerRef.current;
-      const el = activeChunkRef.current;
-      const containerRect = container.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      // Scroll if element is outside visible area
-      if (elRect.top < containerRect.top || elRect.bottom > containerRect.bottom) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }
-  }, [activeChunkIndex, isPlaying]);
 
   const togglePlay = () => {
     if (isActiveChapter) {
@@ -113,43 +59,111 @@ function ChapterPlayer({
     }
   };
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!player.duration) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    player.seek(ratio * player.duration);
-  };
+  return (
+    <button
+      onClick={togglePlay}
+      className={`w-8 h-8 flex items-center justify-center rounded-full transition shrink-0 ${
+        isActiveChapter
+          ? "bg-blue-600 hover:bg-blue-500 text-white"
+          : "bg-green-600 hover:bg-green-500 text-white"
+      }`}
+      title={isPlaying ? "Pause" : "Play"}
+    >
+      {isPlaying ? (
+        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+          <rect x="6" y="4" width="4" height="16" rx="1" />
+          <rect x="14" y="4" width="4" height="16" rx="1" />
+        </svg>
+      ) : (
+        <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function ChapterTextPanel({
+  bookId,
+  chapterId,
+  job,
+  isOpen,
+}: {
+  bookId: number;
+  chapterId: number;
+  job: Job;
+  isOpen: boolean;
+}) {
+  const player = usePlayer();
+  const [text, setText] = useState<string | null>(null);
+  const [textLoading, setTextLoading] = useState(false);
+  const [textLoaded, setTextLoaded] = useState(false);
+  const [timing, setTiming] = useState<TimingChunk[]>([]);
+  const activeChunkRef = useRef<HTMLSpanElement>(null);
+  const textContainerRef = useRef<HTMLDivElement>(null);
+
+  const isActiveChapter = player.track?.chapterId === chapterId;
+  const currentTime = isActiveChapter ? player.currentTime : 0;
+  const isPlaying = isActiveChapter && player.isPlaying;
+
+  // Parse timing data from job
+  useEffect(() => {
+    if (job.timing_data) {
+      try {
+        setTiming(JSON.parse(job.timing_data));
+      } catch {
+        setTiming([]);
+      }
+    }
+  }, [job.timing_data]);
+
+  // Load text when panel opens
+  useEffect(() => {
+    if (isOpen && !textLoaded && !textLoading) {
+      setTextLoading(true);
+      getChapterText(bookId, chapterId)
+        .then((data) => { setText(data.text_content); setTextLoaded(true); })
+        .catch(() => { setText("Failed to load text."); setTextLoaded(true); })
+        .finally(() => setTextLoading(false));
+    }
+  }, [isOpen, textLoaded, textLoading, bookId, chapterId]);
+
+  // Find active chunk index
+  const activeChunkIndex = timing.length > 0
+    ? timing.findIndex((c) => currentTime >= c.start && currentTime < c.end)
+    : -1;
+
+  // Auto-scroll to active chunk
+  useEffect(() => {
+    if (activeChunkRef.current && textContainerRef.current && isPlaying) {
+      const container = textContainerRef.current;
+      const el = activeChunkRef.current;
+      const containerRect = container.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      if (elRect.top < containerRect.top || elRect.bottom > containerRect.bottom) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }
+  }, [activeChunkIndex, isPlaying]);
 
   // Click on a chunk to seek to it
   const seekToChunk = useCallback((chunkIndex: number) => {
     if (!timing[chunkIndex]) return;
     if (!isActiveChapter) {
-      // First start playing this chapter
-      player.play({
-        bookId,
-        chapterId,
-        audioUrl,
-        bookTitle,
-        chapterTitle,
-        chapterNumber,
-        voiceName: job.voice_name,
-        chapters,
-      });
+      // Cannot seek if not playing this chapter - player controls are in the bottom bar
+      return;
     }
-    // Small delay to let audio start, then seek
-    setTimeout(() => player.seek(timing[chunkIndex].start), 50);
-  }, [timing, isActiveChapter, player, bookId, chapterId, audioUrl, bookTitle, chapterTitle, chapterNumber, job.voice_name, chapters]);
+    player.seek(timing[chunkIndex].start);
+  }, [timing, isActiveChapter, player]);
 
   // Render text with chunk highlighting
   const renderHighlightedText = () => {
     if (!text) return null;
 
-    // If no timing data, show plain text
     if (timing.length === 0) {
       return <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{text}</p>;
     }
 
-    // Render each chunk as a clickable span
     return (
       <div className="text-sm leading-relaxed">
         {timing.map((chunk, i) => {
@@ -177,60 +191,16 @@ function ChapterPlayer({
     );
   };
 
-  return (
-    <>
-      {/* Audio controls */}
-      <div className={`flex items-center gap-3 mt-2 p-2 rounded-lg transition-colors ${isActiveChapter ? "bg-blue-900/20 border border-blue-800/50" : ""}`}>
-        <button
-          onClick={togglePlay}
-          className={`w-8 h-8 flex items-center justify-center rounded-full transition shrink-0 ${
-            isActiveChapter ? "bg-blue-600 hover:bg-blue-500" : "bg-green-600 hover:bg-green-500"
-          }`}
-          title={isPlaying ? "Pause" : "Play"}
-        >
-          {isPlaying ? (
-            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-              <rect x="6" y="4" width="4" height="16" rx="1" />
-              <rect x="14" y="4" width="4" height="16" rx="1" />
-            </svg>
-          ) : (
-            <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </button>
-        <span className="text-xs text-gray-500 tabular-nums w-10 text-right shrink-0">
-          {formatTime(isActiveChapter ? currentTime : 0)}
-        </span>
-        <div
-          className="flex-1 h-1.5 bg-gray-800 rounded-full cursor-pointer group relative"
-          onClick={handleSeek}
-        >
-          <div
-            className={`h-full rounded-full relative transition-[width] duration-100 ${
-              isActiveChapter ? "bg-blue-500" : "bg-green-500"
-            }`}
-            style={{ width: player.duration ? `${(currentTime / player.duration) * 100}%` : "0%" }}
-          >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow" />
-          </div>
-        </div>
-        <span className="text-xs text-gray-500 tabular-nums w-10 shrink-0">
-          {formatTime(isActiveChapter ? player.duration : (job.duration_seconds ?? 0))}
-        </span>
-      </div>
+  if (!isOpen) return null;
 
-      {/* Text panel with highlight sync */}
-      {isTextOpen && (
-        <div
-          ref={textContainerRef}
-          className="mt-3 bg-gray-800/50 rounded-lg px-4 py-3 max-h-80 overflow-y-auto scroll-smooth"
-        >
-          {textLoading && <p className="text-gray-500 text-sm">Loading...</p>}
-          {textLoaded && renderHighlightedText()}
-        </div>
-      )}
-    </>
+  return (
+    <div
+      ref={textContainerRef}
+      className="mt-3 bg-gray-800/50 rounded-lg px-4 py-3 max-h-80 overflow-y-auto scroll-smooth"
+    >
+      {textLoading && <p className="text-gray-500 text-sm">Loading...</p>}
+      {textLoaded && renderHighlightedText()}
+    </div>
   );
 }
 
@@ -398,22 +368,41 @@ export default function BookDetailPage() {
                   doneJob ? "border-l-2 border-green-600" : ""
                 }`}
               >
-                <div className="flex justify-between items-center gap-2">
-                  <button
-                    onClick={() => toggleChapterText(ch.id)}
-                    className="text-left flex items-center gap-2 hover:text-blue-400 transition min-w-0"
-                  >
-                    <svg
-                      className={`w-3 h-3 text-gray-500 transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`}
-                      fill="currentColor"
-                      viewBox="0 0 24 24"
+                <div className="flex justify-between items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {doneJob ? (
+                      <ChapterPlayButton
+                        job={doneJob}
+                        bookId={book.id}
+                        chapterId={ch.id}
+                        bookTitle={book.title}
+                        chapterTitle={ch.title}
+                        chapterNumber={ch.chapter_number}
+                        chapters={chaptersForPlayer}
+                      />
+                    ) : (
+                      <div className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-500 shrink-0">
+                        <svg className="w-3.5 h-3.5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M8 5v14l11-7z" />
+                        </svg>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => toggleChapterText(ch.id)}
+                      className="text-left flex items-center gap-2 hover:text-blue-400 transition min-w-0"
                     >
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
-                    <span className="truncate">
-                      {ch.chapter_number}. {ch.title}
-                    </span>
-                  </button>
+                      <svg
+                        className={`w-3 h-3 text-gray-500 transition-transform shrink-0 ${isExpanded ? "rotate-90" : ""}`}
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      <span className="truncate">
+                        {ch.chapter_number}. {ch.title}
+                      </span>
+                    </button>
+                  </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {hasMultipleVoices && selectedVoice && (
                       <select
@@ -428,25 +417,29 @@ export default function BookDetailPage() {
                         ))}
                       </select>
                     )}
-                    <span className="text-gray-500 text-sm">
-                      {ch.word_count} w
-                      {doneJob && (
-                        <span className="text-green-400 ml-1">&#10003;</span>
-                      )}
-                    </span>
+                    {doneJob ? (
+                      <div className="text-right">
+                        <div className="text-gray-300 text-sm">
+                          {formatTime(doneJob.duration_seconds ?? 0)}
+                        </div>
+                        <div className="text-gray-500 text-xs">
+                          {ch.word_count.toLocaleString()} words
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-gray-500 text-sm">
+                        {ch.word_count.toLocaleString()} w
+                      </span>
+                    )}
                   </div>
                 </div>
-                {/* If done: combined player + synced text. Otherwise: plain text view */}
+                {/* Text panel with sync highlighting for done chapters, plain text for others */}
                 {doneJob ? (
-                  <ChapterPlayer
-                    job={doneJob}
+                  <ChapterTextPanel
                     bookId={book.id}
                     chapterId={ch.id}
-                    bookTitle={book.title}
-                    chapterTitle={ch.title}
-                    chapterNumber={ch.chapter_number}
-                    isTextOpen={isExpanded}
-                    chapters={chaptersForPlayer}
+                    job={doneJob}
+                    isOpen={isExpanded}
                   />
                 ) : (
                   isExpanded && <ChapterTextView bookId={book.id} chapterId={ch.id} />

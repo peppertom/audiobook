@@ -28,7 +28,7 @@ class GenerateBookRequest(BaseModel):
     chapter_voices: dict[int, int] = {}  # optional per-chapter overrides: {chapter_id: voice_id}
 
 
-@router.post("/", response_model=JobOut, status_code=201)
+@router.post("", response_model=JobOut, status_code=201)
 async def create_job(job: JobCreate, db: AsyncSession = Depends(get_db)):
     # Validate chapter and voice exist
     ch = await db.execute(select(Chapter).where(Chapter.id == job.chapter_id))
@@ -170,7 +170,7 @@ async def cancel_job(job_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
 
 
-@router.get("/", response_model=list[JobDetailOut])
+@router.get("", response_model=list[JobDetailOut])
 async def list_jobs(book_id: int | None = None, db: AsyncSession = Depends(get_db)):
     from sqlalchemy.orm import selectinload
     query = select(Job).options(selectinload(Job.chapter), selectinload(Job.voice))

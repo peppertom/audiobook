@@ -58,11 +58,14 @@ export function PlayerBar() {
       {/* Track info + progress */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
-          <p className="text-sm truncate">
-            <span className="text-gray-400">Ch.{track.chapterNumber}</span>
-            <span className="mx-1.5 text-gray-600">—</span>
-            <span className="text-white">{track.bookTitle}</span>
-          </p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-white font-medium truncate">
+              {track.chapterTitle}
+            </p>
+            <p className="text-xs text-gray-400 truncate">
+              {track.bookTitle}
+            </p>
+          </div>
           <span className="text-xs text-gray-500 tabular-nums shrink-0 ml-3">
             {formatTime(currentTime)} / {formatTime(duration)}
           </span>
