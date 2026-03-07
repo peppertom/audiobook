@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.config import settings, BACKEND_ROOT
 from app.models import Job, Chapter, Voice
 from app.database import Base
-from app.services.tts_engine import TTSEngine
+from app.services.tts_engine import TTSEngine, select_reference_clip, normalize_audio_ebu_r128
+from app.services.llm_annotator import LLMAnnotator
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +57,20 @@ async def generate_tts(ctx, job_id: int):
                 ref_clip = BACKEND_ROOT / ref_clip
             if not ref_clip.exists():
                 raise ValueError(f"Reference clip not found: {ref_clip}")
+
+            # Fejezet-szintű érzelmi ív elemzés (ha még nincs)
+            annotator: LLMAnnotator = ctx.get("llm_annotator")
+            if annotator and not chapter.emotional_arc:
+                logger.info(f"Job {job_id}: Running LLM arc analysis...")
+                arc = await annotator.analyze_chapter_arc(chapter.text_content)
+                chapter.emotional_arc = json.dumps({
+                    "dominant_emotion": arc.dominant_emotion,
+                    "pacing": arc.pacing,
+                    "intensity": arc.intensity,
+                    "narrator_note": arc.narrator_note,
+                }, ensure_ascii=False)
+                await db.commit()
+                logger.info(f"Job {job_id}: Arc: {arc.dominant_emotion} | intensity={arc.intensity}")
 
             job.error_message = f"Generating audio for chapter: {chapter.title[:50]}..."
             await db.commit()
@@ -116,6 +131,31 @@ async def generate_tts(ctx, job_id: int):
 
                 asyncio.run_coroutine_threadsafe(_update(), loop).result(timeout=10)
 
+            # Érzelem-bank alapú referencia klip kiválasztása
+            emotion_bank = json.loads(voice.emotion_bank) if voice.emotion_bank else {}
+            dominant_emotion = "neutral"
+            if chapter.emotional_arc:
+                arc_data = json.loads(chapter.emotional_arc)
+                dominant_emotion = arc_data.get("dominant_emotion", "neutral")
+            ref_clip = select_reference_clip(
+                emotion_bank=emotion_bank,
+                emotion=dominant_emotion,
+                default=str(ref_clip),
+            )
+            if not ref_clip.is_absolute():
+                ref_clip = BACKEND_ROOT / ref_clip
+            if not ref_clip.exists():
+                raise ValueError(f"Reference clip not found: {ref_clip}")
+
+            # Build TTS text: use normalized segments if available, else raw text
+            if chapter.segments:
+                raw_segments = json.loads(chapter.segments)
+                tts_text = " ".join(
+                    s["text"] for s in raw_segments if not s.get("is_heading")
+                )
+            else:
+                tts_text = chapter.text_content
+
             # Run blocking TTS generation in a thread so the event loop stays free
             # for processing progress update coroutines
             output_path = settings.audio_path / f"ch{chapter.id}_v{voice.id}.wav"
@@ -123,13 +163,23 @@ async def generate_tts(ctx, job_id: int):
                 None,
                 functools.partial(
                     tts.generate,
-                    text=chapter.text_content,
+                    text=tts_text,
                     reference_clip=ref_clip,
                     output_path=output_path,
                     language=voice.language,
                     on_progress=on_chunk_progress,
                 ),
             )
+
+            # Post-processing: EBU R128 normalizálás (non-fatal)
+            try:
+                normalized_path = output_path.parent / f"{output_path.stem}_norm.wav"
+                normalize_audio_ebu_r128(output_path, normalized_path)
+                output_path.unlink()
+                normalized_path.rename(output_path)
+                logger.info(f"Job {job_id}: EBU R128 normalization complete")
+            except Exception as e:
+                logger.warning(f"Job {job_id}: Normalization failed (non-fatal): {e}")
 
             # Store relative path for URL serving
             try:
@@ -172,6 +222,10 @@ async def startup(ctx):
     logger.info(f"TTS model loaded on device: {tts.device}")
 
     ctx["tts_engine"] = tts
+    ctx["llm_annotator"] = LLMAnnotator(
+        base_url=settings.ollama_url,
+        model=settings.ollama_model,
+    )
     ctx["db_engine"] = create_async_engine(settings.database_url, echo=False)
 
 

@@ -78,6 +78,43 @@ export const createVoiceFromYoutube = async (voiceId: number, url: string) =>
 export const deleteVoice = (id: number) =>
   fetchWithAuth(`${API_BASE}/api/voices/${id}`, { method: "DELETE" });
 
+export const EMOTION_LABELS: Record<string, string> = {
+  neutral: "Semleges narráció",
+  happy: "Örömteli",
+  sad: "Szomorú",
+  tense: "Feszült",
+  angry: "Dühös",
+  whisper: "Suttogó",
+};
+
+export async function getEmotionTexts(): Promise<Record<string, string>> {
+  const res = await fetch(`${API_BASE}/api/voices/emotion-texts`);
+  if (!res.ok) throw new Error("Failed to fetch emotion texts");
+  return res.json();
+}
+
+export async function uploadEmotionClip(
+  voiceId: number,
+  emotion: string,
+  file: Blob,
+  filename: string = "recording.wav"
+): Promise<void> {
+  const form = new FormData();
+  form.append("file", file, filename);
+  const res = await fetchWithAuth(`${API_BASE}/api/voices/${voiceId}/emotion-clips/${emotion}`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+}
+
+export async function deleteEmotionClip(voiceId: number, emotion: string): Promise<void> {
+  const res = await fetchWithAuth(`${API_BASE}/api/voices/${voiceId}/emotion-clips/${emotion}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Delete failed: ${res.statusText}`);
+}
+
 // Jobs
 export const getJobs = () => fetchApi<Job[]>("/api/jobs/");
 export const getBookJobs = (bookId: number) => fetchApi<Job[]>(`/api/jobs/?book_id=${bookId}`);
@@ -117,7 +154,7 @@ export interface BookDetail extends Book { chapters: Chapter[]; }
 export interface Voice {
   id: number; name: string; description: string; language: string;
   sample_audio_path: string | null; reference_clip_path: string | null;
-  source: string; created_at: string;
+  source: string; emotion_bank: string | null; created_at: string;
 }
 export interface TimingChunk {
   start: number; end: number; text: string;

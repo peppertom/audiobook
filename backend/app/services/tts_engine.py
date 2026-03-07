@@ -1,5 +1,6 @@
 """XTTS-v2 Text-to-Speech engine."""
 import os
+import subprocess
 import wave
 import torch
 from pathlib import Path
@@ -21,6 +22,61 @@ def _patched_torch_load(*args, **kwargs):
 torch.load = _patched_torch_load
 
 from TTS.api import TTS
+
+# --- Audio utilities (torch-free, usable in tests) ---
+
+PAUSE_MS = {
+    ("dialogue", "narration"): 600,
+    ("narration", "dialogue"): 300,
+    ("heading", "narration"): 1500,
+    ("heading", "dialogue"): 1500,
+    ("action", "narration"): 200,
+    ("action", "dialogue"): 200,
+}
+DEFAULT_PAUSE_MS = 500
+
+
+def build_pause_between(prev_type: str, next_type: str) -> int:
+    """Return calibrated pause in milliseconds between two segment types."""
+    return PAUSE_MS.get((prev_type, next_type), DEFAULT_PAUSE_MS)
+
+
+EMOTION_FALLBACK = {
+    "tense": "neutral",
+    "angry": "tense",
+    "whisper": "sad",
+    "happy": "neutral",
+}
+
+
+def select_reference_clip(emotion_bank: dict, emotion: str, default: str) -> Path:
+    """Select the best matching reference clip from emotion bank."""
+    if emotion in emotion_bank:
+        return Path(emotion_bank[emotion])
+    fallback_emotion = EMOTION_FALLBACK.get(emotion, "neutral")
+    if fallback_emotion in emotion_bank:
+        return Path(emotion_bank[fallback_emotion])
+    if "neutral" in emotion_bank:
+        return Path(emotion_bank["neutral"])
+    return Path(default)
+
+
+def normalize_audio_ebu_r128(input_path: Path, output_path: Path) -> Path:
+    """Normalize audio to audiobook standard: -18 LUFS, True Peak -1.5 dBTP."""
+    subprocess.run(
+        [
+            "ffmpeg-normalize", str(input_path),
+            "-o", str(output_path),
+            "--loudness-range-target", "7",
+            "--target-level", "-18",
+            "--true-peak", "-1.5",
+            "--audio-codec", "pcm_s16le",
+            "-f",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return output_path
 
 
 class TTSEngine:
@@ -109,15 +165,19 @@ class TTSEngine:
             sentences.append(current.strip())
         return sentences if sentences else [text]
 
-    def _concatenate_audio(self, paths: list[Path], output: Path):
-        """Concatenate WAV files using ffmpeg."""
-        import subprocess, tempfile
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            for p in paths:
-                f.write(f"file '{p}'\n")
-            list_path = f.name
-        subprocess.run(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", str(output)],
-            check=True, capture_output=True,
-        )
-        Path(list_path).unlink(missing_ok=True)
+    def _concatenate_audio(self, paths: list[Path], output: Path, seg_types: list[str] | None = None):
+        """Concatenate WAV files using pydub with calibrated pauses between segments."""
+        from pydub import AudioSegment as PydubAudio
+
+        result = PydubAudio.empty()
+        for i, path in enumerate(paths):
+            segment = PydubAudio.from_wav(str(path))
+            result += segment
+            if i < len(paths) - 1:
+                if seg_types and i + 1 < len(seg_types):
+                    pause_ms = build_pause_between(seg_types[i], seg_types[i + 1])
+                else:
+                    pause_ms = DEFAULT_PAUSE_MS
+                result += PydubAudio.silent(duration=pause_ms)
+
+        result.export(str(output), format="wav")
