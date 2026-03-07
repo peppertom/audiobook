@@ -1,3 +1,4 @@
+import json
 import shutil
 from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -47,6 +48,7 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
             title=ch["title"],
             text_content=ch["text"],
             word_count=ch["word_count"],
+            segments=json.dumps(ch.get("segments", []), ensure_ascii=False),
         )
         db.add(chapter)
 

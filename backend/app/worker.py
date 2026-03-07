@@ -116,6 +116,15 @@ async def generate_tts(ctx, job_id: int):
 
                 asyncio.run_coroutine_threadsafe(_update(), loop).result(timeout=10)
 
+            # Build TTS text: use normalized segments if available, else raw text
+            if chapter.segments:
+                raw_segments = json.loads(chapter.segments)
+                tts_text = " ".join(
+                    s["text"] for s in raw_segments if not s.get("is_heading")
+                )
+            else:
+                tts_text = chapter.text_content
+
             # Run blocking TTS generation in a thread so the event loop stays free
             # for processing progress update coroutines
             output_path = settings.audio_path / f"ch{chapter.id}_v{voice.id}.wav"
@@ -123,7 +132,7 @@ async def generate_tts(ctx, job_id: int):
                 None,
                 functools.partial(
                     tts.generate,
-                    text=chapter.text_content,
+                    text=tts_text,
                     reference_clip=ref_clip,
                     output_path=output_path,
                     language=voice.language,
