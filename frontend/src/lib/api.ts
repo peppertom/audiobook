@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 // --- Auth helpers ---
 function getToken(): string | null {
@@ -159,4 +159,14 @@ export interface CreditTransaction {
 export interface CostEstimate {
   total_words: number; credits_required: number;
   estimated_cost_usd: number; current_balance: number; sufficient_credits: boolean;
+}
+
+// Enriched book for library display (computed client-side)
+export interface BookWithStats extends Book {
+  chapters_done: number;
+  chapters_total: number;
+  total_duration_seconds: number;
+  has_active_jobs: boolean;
+  voice_name?: string;
+  voice_language?: string;
 }

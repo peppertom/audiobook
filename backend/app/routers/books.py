@@ -55,7 +55,7 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
     return book
 
 
-@router.get("/", response_model=list[BookOut])
+@router.get("", response_model=list[BookOut])
 async def list_books(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Book).order_by(Book.created_at.desc()))
     return result.scalars().all()

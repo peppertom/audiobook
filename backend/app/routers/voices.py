@@ -46,7 +46,7 @@ def to_relative_path(abs_path: Path) -> str:
 router = APIRouter(prefix="/api/voices", tags=["voices"])
 
 
-@router.post("/", response_model=VoiceOut, status_code=201)
+@router.post("", response_model=VoiceOut, status_code=201)
 async def create_voice(voice: VoiceCreate, db: AsyncSession = Depends(get_db)):
     db_voice = Voice(**voice.model_dump())
     db.add(db_voice)
@@ -55,7 +55,7 @@ async def create_voice(voice: VoiceCreate, db: AsyncSession = Depends(get_db)):
     return db_voice
 
 
-@router.get("/", response_model=list[VoiceOut])
+@router.get("", response_model=list[VoiceOut])
 async def list_voices(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Voice).order_by(Voice.created_at.desc()))
     return result.scalars().all()

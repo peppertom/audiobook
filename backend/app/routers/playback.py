@@ -8,7 +8,7 @@ from app.schemas import PlaybackStateUpdate, PlaybackStateOut
 router = APIRouter(prefix="/api/playback", tags=["playback"])
 
 
-@router.put("/", response_model=PlaybackStateOut)
+@router.put("", response_model=PlaybackStateOut)
 async def save_playback_state(state: PlaybackStateUpdate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(PlaybackState).where(
@@ -28,7 +28,7 @@ async def save_playback_state(state: PlaybackStateUpdate, db: AsyncSession = Dep
     return existing
 
 
-@router.get("/", response_model=PlaybackStateOut)
+@router.get("", response_model=PlaybackStateOut)
 async def get_playback_state(
     book_id: int = Query(...), voice_id: int = Query(...), db: AsyncSession = Depends(get_db)
 ):
