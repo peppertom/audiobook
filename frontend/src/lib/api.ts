@@ -140,6 +140,12 @@ export const getPlaybackState = (bookId: number, voiceId: number) =>
 export const savePlaybackState = (state: PlaybackStateUpdate) =>
   fetchApi<PlaybackState>("/api/playback", { method: "PUT", body: JSON.stringify(state) });
 
+// Reading State
+export const getReadingState = (bookId: number) =>
+  fetchApi<ReadingState>(`/api/reading/${bookId}`);
+export const saveReadingState = (bookId: number, data: ReadingStateUpdate) =>
+  fetchApi<ReadingState>(`/api/reading/${bookId}`, { method: "PUT", body: JSON.stringify(data) });
+
 // User
 export const getCurrentUser = () => fetchApi<UserProfile>("/api/users/me");
 export const getUserSettings = () => fetchApi<UserSettings>("/api/users/me/settings");
@@ -189,6 +195,20 @@ export interface PlaybackStateUpdate {
   book_id: number; voice_id: number;
   current_chapter_id: number; position_seconds: number;
 }
+export interface ReadingState {
+  id: number; book_id: number; current_chapter_id: number;
+  scroll_position: number; paragraph_index: number;
+  reading_progress: number; audio_position: number;
+  voice_id: number | null; updated_at: string;
+}
+export interface ReadingStateUpdate {
+  current_chapter_id: number;
+  scroll_position: number;
+  paragraph_index: number;
+  reading_progress: number;
+  audio_position: number;
+  voice_id?: number | null;
+}
 export interface UserProfile {
   id: string; email: string; name: string | null;
   avatar_url: string | null; locale: string; created_at: string;
@@ -196,6 +216,16 @@ export interface UserProfile {
 export interface UserSettings {
   playback_speed: number; audio_quality: string;
   email_notifications: boolean; theme: string; ui_language: string;
+  reading_font_family: string;
+  reading_font_size: number;
+  reading_line_height: number;
+  reading_word_spacing: number;
+  reading_letter_spacing: number;
+  reading_max_width: number;
+  reading_theme: string;
+  reading_custom_bg: string;
+  reading_custom_text: string;
+  reading_focus_line: boolean;
 }
 export interface CreditBalance {
   balance: number;
