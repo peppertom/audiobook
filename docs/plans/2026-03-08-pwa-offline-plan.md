@@ -930,56 +930,151 @@ elsődleges cél, érdemes **MP3 vagy AAC** generálást is támogatni a WAV mel
 
 ### Phase 1 – PWA Alap (1 hét)
 
-- [ ] `serwist` + `@serwist/next` telepítése
-- [ ] `manifest.json` elkészítése (ikonok, shortcuts, file_handlers)
-- [ ] App ikonok generálása (72, 96, 128, 144, 192, 512px) – maskable verzió
-- [ ] iOS splash screen képek
-- [ ] `sw.ts` Service Worker alap caching stratégiákkal
-- [ ] Offline fallback oldal (`/offline`)
-- [ ] Navbar offline indicator (`navigator.onLine` + `online`/`offline` events)
-- [ ] Install prompt komponens (3. látogatás után)
+**Csomagok:**
+- [ ] `npm install serwist @serwist/next` – Service Worker keretrendszer
+- [ ] `npm install idb` – IndexedDB typed wrapper
 
-### Phase 2 – IndexedDB és Offline Adatbázis (1 hét)
+**Manifest és ikonok:**
+- [ ] `public/manifest.json` elkészítése (ikonok, shortcuts, file_handlers)
+- [ ] App ikonok generálása: 72, 96, 128, 144, 192, 512px – maskable változat is
+- [ ] iOS splash screen képek (`public/splash/`)
+- [ ] `layout.tsx` bővítése: manifest link, apple-touch-icon, theme-color meta
 
-- [ ] `idb` telepítése, DB séma implementálása (`offline-db.ts`)
-- [ ] `OfflineManager` osztály – book letöltési logika
-- [ ] `OfflineManager` – voice letöltési logika
-- [ ] Fejezet szöveg offline cache (IndexedDB)
-- [ ] `getChapterTextOffline` offline-aware wrapper
+**Service Worker:**
+- [ ] `src/sw.ts` alap Service Worker létrehozása serwist-tel
+- [ ] Caching stratégiák beállítása:
+  - App shell / Next.js chunks → `CacheFirst`, hosszú TTL
+  - Google Fonts → `CacheFirst`, 1 éves TTL
+  - API metaadatok (könyvek, hangok) → `NetworkFirst`, 24h fallback
+  - Fejezet szöveg API → `StaleWhileRevalidate`
+  - Audio URL-ek (`/static/audio/`) → `NetworkOnly` (audio OPFS-ben van, nem Cache API-ban)
+  - Voice clipek → `CacheFirst` (kis fájlok, Cache API megfelelő)
+- [ ] `next.config.ts` bővítése serwist integrációval
+- [ ] Offline fallback oldal (`/app/offline/page.tsx`)
+
+**Online/Offline UI alap:**
+- [ ] `OfflineIndicator` komponens – Navbar-ban piros chip offline módban
+- [ ] `navigator.onLine` + `online`/`offline` event listener hook (`useOnlineStatus`)
+- [ ] Install prompt komponens (`InstallPrompt.tsx`) – 3. látogatás után jelenik meg
+
+---
+
+### Phase 2 – OPFS Audio Tárolás (1 hét)
+
+> **Ez a legkritikusabb fázis.** Az OPFS a tartós audio offline tárolás alapja.
+
+**IndexedDB séma (`offline-db.ts`):**
+- [ ] `openDB` hívás, séma verziózás
+- [ ] `offline-books` store – könyv metaadatok, letöltött fejezetek listája
+- [ ] `chapter-texts` store – fejezet szöveg tartalom
+- [ ] `download-queue` store – letöltési állapot per fejezet/típus, indexek: `by-book`, `by-status`
+- [ ] `offline-voices` store – hang metaadatok
+- [ ] `reading-states` store – olvasási pozíció, `synced` flag
+- [ ] `storage-info` store – kvóta cache
+
+**OPFS Worker (`opfs-worker.ts`):**
+- [ ] Dedicated Worker létrehozása az OPFS szinkron íráshoz (nem blokkolja a UI-t)
+- [ ] `write(filename, buffer)` üzenet kezelő – `createSyncAccessHandle()` alapú írás
+- [ ] `delete(filename)` üzenet kezelő
+- [ ] `exists(filename)` ellenőrzés
+- [ ] Worker kommunikáció: `postMessage` + `Promise` wrapper a főszálban
+
+**OfflineManager osztály (`offline-manager.ts`):**
+- [ ] `navigator.storage.persist()` hívás az első letöltéskor – kötelező lépés
+- [ ] `downloadBook(bookId, includeAudio, voiceId)` – fő belépési pont
+  - [ ] Metaadatok → IndexedDB
+  - [ ] Fejezet szövegek → IndexedDB (szekvenciális, progress tracking)
+  - [ ] Audio: Background Fetch detekció → OPFS-be irányítás
+- [ ] `downloadAudioToOPFS(bookId, voiceId)` – fő letöltési fallback
+  - [ ] `fetch()` per fejezet audio URL (auth headerrel)
+  - [ ] `ArrayBuffer` → OPFS Worker-en át fájlba írás
+  - [ ] Progress callback per fejezet
+- [ ] `startBackgroundFetch(bookId, voiceId)` – Chrome Android háttérletöltés
+  - [ ] `ServiceWorkerRegistration.backgroundFetch.fetch()` hívás
+  - [ ] Progress listener
+- [ ] `getAudioSrc(chapterId)` – lejátszáshoz URL visszaadása
+  - [ ] OPFS → `fileHandle.getFile()` → `URL.createObjectURL()` → Blob URL
+  - [ ] Fallback: hálózati URL (ha nem töltötték le)
+- [ ] `downloadVoice(voiceId)` – hang referencia clip OPFS-be
+- [ ] `removeBook(bookId, removeAudio)` – OPFS fájlok + IndexedDB törlése
+- [ ] `checkStorageQuota()` – szabad hely ellenőrzés letöltés előtt
+
+**Service Worker – Background Fetch callback (`sw.ts` bővítés):**
+- [ ] `backgroundfetchsuccess` event: letöltött response-ok → OPFS-be mentés
+- [ ] `backgroundfetchfail` event: hiba jelzés, részleges adat törlése
+- [ ] `backgroundfetchabort` event: megszakítás kezelése
+
+**Offline-aware API wrapper:**
+- [ ] `getChapterTextOffline(bookId, chapterId)` – IndexedDB → Cache → hálózat fallback sorrend
+
+---
 
 ### Phase 3 – Letöltés UI (1 hét)
 
-- [ ] BookCard letöltés gomb + progress bar
-- [ ] Letöltés modal (méretbecslés, hang választó)
+- [ ] `DownloadButton.tsx` – BookCard-on és könyv detail oldalon
+  - [ ] Állapotok: nincs letöltve | letöltés folyamatban | letöltve | részleges
+  - [ ] Progress bar (0–100%), fejezet számláló (`3/12 fejezet`)
+  - [ ] Megszakítás gomb
+- [ ] `DownloadModal.tsx` – letöltés indítása előtt
+  - [ ] Szöveg vs. Audio (hanggal) opció
+  - [ ] Hang választó (melyik hangot töltse le)
+  - [ ] Becsült méret megjelenítése
+  - [ ] Szabad hely és kvóta vizualizáció
+  - [ ] iOS figyelmeztetés: „tartsd nyitva az appot letöltés közben"
+  - [ ] `navigator.storage.persist()` kérés, ha még nincs megadva
+- [ ] `StorageBar.tsx` – tárhelyhasználat progress bar
 - [ ] `/settings/offline` storage kezelő oldal
-- [ ] `navigator.storage.estimate()` vizualizáció
-- [ ] `navigator.storage.persist()` kérés (könyv első letöltésekor)
-- [ ] Background Fetch progress (Chrome Android)
-- [ ] Letöltési queue kezelés (egy időben max. 3 fejezet)
+  - [ ] Offline könyvek listája mérettel, törlés gombbal
+  - [ ] Offline hangok listája mérettel, törlés gombbal
+  - [ ] `navigator.storage.estimate()` összesítő
+  - [ ] Persist státusz indikátor (`✓ Tartós tárolás engedélyezve`)
+  - [ ] „Összes törlése" gomb megerősítéssel
+- [ ] Letöltési queue: párhuzamos fejezet letöltés max. 3 egyszerre
+
+---
 
 ### Phase 4 – Media Session és Lock Screen Player (3 nap)
 
-- [ ] Media Session API integráció a ChapterPlayer-be
-- [ ] Könyv borítókép generálás/placeholder (EPUB cover extraction)
-- [ ] `setPositionState` valós idejű pozíció frissítés
-- [ ] Bluetooth / fejhallgató gombok kezelése
+- [ ] `media-session.ts` wrapper modul
+  - [ ] `updateMediaSession(chapter, book, coverUrl)` – metadata beállítás
+  - [ ] `updatePositionState(currentTime, duration, rate)` – seekbar szinkron
+  - [ ] Action handler-ek: play, pause, seekbackward (-10s), seekforward (+10s), previoustrack, nexttrack, seekto
+- [ ] EPUB borítókép kinyerés (backend: `epub_parser.py` bővítése, cover image kimentése)
+- [ ] `ChapterPlayer` integráció – minden állapotváltáskor Media Session frissítés
+- [ ] Bluetooth / fejhallgató hardver gomb tesztelés
+
+---
 
 ### Phase 5 – Background Sync és Olvasási Állapot (3 nap)
 
-- [ ] IndexedDB `reading-states` store
-- [ ] Offline írás → `synced: false` jelzés
-- [ ] Background Sync registration (`sync-reading-states`)
-- [ ] Online eseményre sync trigger (fallback)
-- [ ] Konfliktusmegoldás: timestamp alapú (legújabb wins)
+- [ ] IndexedDB `reading-states` írás minden pozícióváltozásnál (`synced: false`)
+- [ ] `sync-reading-states` Service Worker Background Sync tag regisztráció
+- [ ] SW `sync` event handler: unsync-elt állapotok → PUT `/api/reading/`
+- [ ] Fallback (iOS/Firefox): `visibilitychange` + `beforeunload` → közvetlen API hívás
+- [ ] Konfliktusmegoldás: `updated_at` timestamp alapú (legújabb wins)
+- [ ] `synced: true` jelölés sikeres szinkronizáció után
 
-### Phase 6 – iOS Optimalizáció és Tesztelés (1 hét)
+---
 
-- [ ] iOS install instrukciók (Share menü tutorial overlay)
-- [ ] Safari storage persist warning és kezelés
-- [ ] iOS audio policy kezelés (felhasználói interakció szükséges az első lejátszáshoz)
-- [ ] Tesztelés: Chrome Android, Safari iOS, Firefox Android
-- [ ] Tesztelés: Repülőgép mód (valódi offline teszt)
-- [ ] Lighthouse PWA audit → 100 pont cél
+### Phase 6 – iOS és Cross-Browser Tesztelés (1 hét)
+
+**iOS-specifikus:**
+- [ ] Install instrukció overlay: „Érintsd meg a Share ikont → Képernyőre adás"
+  – csak Safari iOS-on jelenik meg, ha az app nincs telepítve
+- [ ] iOS audio autoplay policy: első lejátszás user interaction után indul
+- [ ] Safari `navigator.storage.persist()` korlátozott viselkedés: fallback kezelés,
+  tájékoztató üzenet a user felé
+- [ ] OPFS iOS 15.2+ tesztelés – szinkron Worker írás ellenőrzése
+
+**Tesztelési checklist:**
+- [ ] Chrome Android – teljes offline flow (letöltés, lejátszás, olvasás repülőgép módban)
+- [ ] Safari iOS – offline flow (Background Fetch nélkül, OPFS-sel)
+- [ ] Firefox Android – teljes offline flow
+- [ ] Background Fetch teszt: letöltés indítása → app bezárása → értesítés megjelenése
+- [ ] OPFS persistence teszt: letöltés → böngésző újraindítás → fájl még elérhető-e
+- [ ] Storage pressure teszt: kis hely esetén az OS törli-e az adatot (persist nélkül vs. után)
+- [ ] Blob URL seeking teszt: OPFS-ből betöltött audio seekelhető-e
+- [ ] Lighthouse PWA audit → célt: Installable ✅, Works Offline ✅, Fast on 3G ✅
 
 ---
 
