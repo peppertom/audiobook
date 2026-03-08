@@ -5,6 +5,18 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+SUMMARY_PROMPT = """\
+You are a book summarizer. Read the following chapter excerpt and write a concise \
+summary in {language}. The summary should be 3-5 sentences (~100-150 words) that \
+captures the key events and themes. Do not include spoiler warnings or meta-commentary. \
+Write as if describing the chapter to someone browsing the table of contents.
+
+Return a JSON object with a single "summary" field containing the summary text.
+
+Chapter text (first 3000 characters):
+{chapter_text}
+"""
+
 CHAPTER_ARC_PROMPT = """\
 Hangoskönyv-rendező vagy. Elemezd a regényfejezet alábbi részletét, \
 és adj vissza JSON objektumot az alábbi mezőkkel:
@@ -48,6 +60,19 @@ class LLMAnnotator:
             response.raise_for_status()
             data = response.json()
             return json.loads(data["response"])
+
+    async def generate_summary(self, chapter_text: str, language: str = "Hungarian") -> str:
+        """Generate a short chapter summary. Returns empty string on error."""
+        prompt = SUMMARY_PROMPT.format(
+            chapter_text=chapter_text[:3000],
+            language=language,
+        )
+        try:
+            result = await self._call_ollama(prompt)
+            return result.get("summary", "")
+        except Exception as e:
+            logger.warning(f"Summary generation failed, skipping: {e}")
+            return ""
 
     async def analyze_chapter_arc(self, chapter_text: str) -> EmotionalArc:
         """Analyze the emotional arc of a chapter. Returns fallback on error."""

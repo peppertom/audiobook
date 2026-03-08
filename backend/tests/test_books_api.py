@@ -1,6 +1,7 @@
 import pytest
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import patch, AsyncMock
 from ebooklib import epub
 
 
@@ -72,3 +73,55 @@ async def test_delete_book(client, tmp_path):
     book_id = upload.json()["id"]
     response = await client.delete(f"/api/books/{book_id}")
     assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_upload_book_generates_summaries(client, tmp_path):
+    """Upload should attempt summary generation for each chapter."""
+    epub_bytes = create_test_epub_bytes()
+    with patch("app.routers.books.LLMAnnotator") as MockAnnotator:
+        instance = MockAnnotator.return_value
+        instance.generate_summary = AsyncMock(return_value="Test summary.")
+        response = await client.post(
+            "/api/books/upload",
+            files={"file": ("test.epub", BytesIO(epub_bytes), "application/epub+zip")},
+        )
+    assert response.status_code == 201
+    assert instance.generate_summary.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_upload_succeeds_when_ollama_unavailable(client, tmp_path):
+    """Upload should succeed even if Ollama is down (summary = None)."""
+    epub_bytes = create_test_epub_bytes()
+    with patch("app.routers.books.LLMAnnotator") as MockAnnotator:
+        instance = MockAnnotator.return_value
+        instance.generate_summary = AsyncMock(return_value="")
+        response = await client.post(
+            "/api/books/upload",
+            files={"file": ("test.epub", BytesIO(epub_bytes), "application/epub+zip")},
+        )
+    assert response.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_generate_summaries_endpoint(client, tmp_path):
+    """POST /api/books/{id}/generate-summaries should generate missing summaries."""
+    epub_bytes = create_test_epub_bytes()
+    with patch("app.routers.books.LLMAnnotator") as MockAnnotator:
+        instance = MockAnnotator.return_value
+        instance.generate_summary = AsyncMock(return_value="")
+        upload = await client.post(
+            "/api/books/upload",
+            files={"file": ("test.epub", BytesIO(epub_bytes), "application/epub+zip")},
+        )
+    book_id = upload.json()["id"]
+
+    with patch("app.routers.books.LLMAnnotator") as MockAnnotator:
+        instance = MockAnnotator.return_value
+        instance.generate_summary = AsyncMock(return_value="Generated summary.")
+        response = await client.post(f"/api/books/{book_id}/generate-summaries")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["generated"] >= 1

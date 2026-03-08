@@ -83,6 +83,7 @@ class ChapterOut(BaseModel):
     chapter_number: int
     title: str
     word_count: int
+    summary: str | None = None
     model_config = {"from_attributes": True}
 
 

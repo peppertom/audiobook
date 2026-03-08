@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "next/navigation";
 import {
-  getBook, generateBook, getBookJobs, getChapterText, getVoices,
+  getBook, generateBook, getBookJobs, getChapterText, getVoices, generateChapterSummary,
   BookDetail, Job, Voice, TimingChunk,
 } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
@@ -235,6 +235,8 @@ export default function BookDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [expandedChapters, setExpandedChapters] = useState<Set<number>>(new Set());
+  const [expandedSummaries, setExpandedSummaries] = useState<Set<number>>(new Set());
+  const [summaryLoadingChapters, setSummaryLoadingChapters] = useState<Set<number>>(new Set());
   const [voices, setVoices] = useState<Voice[]>([]);
   const [chapterVoices, setChapterVoices] = useState<Record<number, number>>({});
 
@@ -267,6 +269,20 @@ export default function BookDetailPage() {
     setChapterVoices((prev) => ({ ...prev, [chapterId]: voiceId }));
   };
 
+  const handleRetitle = async () => {
+    if (!book) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/books/${book.id}/retitle-chapters`, { method: "POST" });
+      const data = await res.json();
+      if (data.updated > 0) {
+        await getBook(book.id).then(setBook);
+      }
+      alert(`Updated ${data.updated} of ${data.total} chapter titles.`);
+    } catch {
+      alert("Failed to retitle chapters.");
+    }
+  };
+
   const handleGenerate = async () => {
     if (!book || !selectedVoice) return;
     setGenerating(true);
@@ -284,6 +300,33 @@ export default function BookDetailPage() {
       alert("Failed to start generation");
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const toggleSummary = (chapterId: number) => {
+    setExpandedSummaries((prev) => {
+      const next = new Set(prev);
+      if (next.has(chapterId)) { next.delete(chapterId); } else { next.add(chapterId); }
+      return next;
+    });
+  };
+
+  const handleGenerateChapterSummary = async (chapterId: number) => {
+    if (!book) return;
+    setSummaryLoadingChapters((prev) => new Set(prev).add(chapterId));
+    try {
+      const { summary } = await generateChapterSummary(book.id, chapterId);
+      setBook((prev) => prev ? {
+        ...prev,
+        chapters: prev.chapters.map((ch) =>
+          ch.id === chapterId ? { ...ch, summary } : ch
+        ),
+      } : prev);
+      setExpandedSummaries((prev) => new Set(prev).add(chapterId));
+    } catch {
+      alert("Összefoglaló generálása sikertelen. Fut az Ollama?");
+    } finally {
+      setSummaryLoadingChapters((prev) => { const next = new Set(prev); next.delete(chapterId); return next; });
     }
   };
 
@@ -348,14 +391,23 @@ export default function BookDetailPage() {
       </button>
 
       <div className="mt-8">
-        <h2 className="text-lg font-semibold mb-3">
-          Chapters ({book.chapters.length})
-          {doneCount > 0 && (
-            <span className="text-sm font-normal text-green-400 ml-2">
-              {doneCount} ready
-            </span>
-          )}
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold">
+            Chapters ({book.chapters.length})
+            {doneCount > 0 && (
+              <span className="text-sm font-normal text-green-400 ml-2">
+                {doneCount} ready
+              </span>
+            )}
+          </h2>
+          <button
+            onClick={handleRetitle}
+            className="text-xs text-gray-500 hover:text-gray-300 transition"
+            title="Re-extract chapter titles from text"
+          >
+            Re-extract titles
+          </button>
+        </div>
         <ul className="space-y-2">
           {[...book.chapters]
             .sort((a, b) => {
@@ -440,6 +492,38 @@ export default function BookDetailPage() {
                     )}
                   </div>
                 </div>
+                {/* Summary toggle */}
+                {ch.summary ? (
+                  <div className="mt-2">
+                    <button
+                      onClick={() => toggleSummary(ch.id)}
+                      className="text-xs text-blue-400 hover:text-blue-300 transition flex items-center gap-1"
+                    >
+                      <svg
+                        className={`w-3 h-3 transition-transform ${expandedSummaries.has(ch.id) ? "rotate-90" : ""}`}
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                      Összefoglaló
+                    </button>
+                    {expandedSummaries.has(ch.id) && (
+                      <p className="mt-1.5 text-sm text-gray-400 leading-relaxed pl-4 border-l border-gray-700">
+                        {ch.summary}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleGenerateChapterSummary(ch.id)}
+                    disabled={summaryLoadingChapters.has(ch.id)}
+                    className="mt-2 text-xs text-gray-500 hover:text-gray-300 transition disabled:opacity-50"
+                  >
+                    {summaryLoadingChapters.has(ch.id) ? "Generálás..." : "Összefoglaló generálása"}
+                  </button>
+                )}
+
                 {/* Text panel with sync highlighting for done chapters, plain text for others */}
                 {doneJob ? (
                   <ChapterTextPanel

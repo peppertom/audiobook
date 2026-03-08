@@ -48,12 +48,36 @@ def to_relative_path(abs_path: Path) -> str:
 EMOTION_CATEGORIES = Literal["neutral", "happy", "sad", "tense", "angry", "whisper"]
 
 EMOTION_TEXTS = {
-    "neutral": "A szobában csend volt. Az ablakon átszűrődő fény lassan kúszott végig a padlón, és minden úgy állt, ahogy előző este hagyta.",
-    "happy": "Végre megérkeztek! Azt hitte, ez a nap soha nem jön el, mégis itt álltak, ragyogó arccal, tele nevetéssel és izgalommal.",
-    "sad": "Nem értette, hogyan lehet valaki egyszerre ilyen közel és ilyen messze. A levelek ott hevertek az asztalon, olvasatlanul.",
-    "tense": "Valaki a folyosón volt. A lélegzetét visszafojtva figyelt — egy lépés, aztán csend. Aztán megint egy lépés, közelebb.",
-    "angry": "Elege lett. Minden egyes alkalommal ugyanez történt, és most már nem volt hajlandó szó nélkül elmenni mellette.",
-    "whisper": "Hallod? — suttogta, és közelebb hajolt. — Ne mondd senkinek. Ez csak közöttünk marad, rendben?",
+    "neutral": (
+        "A szobában csend volt. Az ablakon átszűrődő fény lassan kúszott végig a padlón, "
+        "és minden úgy állt, ahogy előző este hagyta. Felállt, kinyitotta az ablakot, és hideg "
+        "levegő áramlott be. Valahol a város mélyén autó dudált, aztán megint csend lett."
+    ),
+    "happy": (
+        "Végre megérkeztek! Azt hitte, ez a nap soha nem jön el, mégis itt álltak, ragyogó "
+        "arccal, tele nevetéssel és izgalommal. Átölelte mindkettőjüket egyszerre, és érezte, "
+        "hogy a szíve majd kiugrik a helyéről. Ilyen jó volt újra együtt lenni."
+    ),
+    "sad": (
+        "Nem értette, hogyan lehet valaki egyszerre ilyen közel és ilyen messze. A levelek ott "
+        "hevertek az asztalon, olvasatlanul. Már nem tudta, mit írna vissza — vagy hogy egyáltalán "
+        "érdemes-e. Kinézett az ablakon, és hosszan figyelte az esőt."
+    ),
+    "tense": (
+        "Valaki a folyosón volt. A lélegzetét visszafojtva figyelt — egy lépés, aztán csend. "
+        "Aztán megint egy lépés, közelebb. A kilincs lassan, zajtalanul mozdult meg. Nem mert "
+        "felállni, nem mert megszólalni. Csak várt, és a szíve vadul vert."
+    ),
+    "angry": (
+        "Elege lett. Minden egyes alkalommal ugyanez történt, és most már nem volt hajlandó szó "
+        "nélkül elmenni mellette. Megfordult, és egyenesen a szemébe nézett. — Tudod mit? Most "
+        "már tényleg mindegy. Csináld, amit akarsz — mondta, és becsapta maga mögött az ajtót."
+    ),
+    "whisper": (
+        "Hallod? — suttogta, és közelebb hajolt. — Ne mondd senkinek. Ez csak közöttünk marad, "
+        "rendben? — Keze remegett, ahogy a papírt átnyújtotta. — Ha megtudják, hogy itt voltam, "
+        "mindennek vége. Figyelj rám: senkinek egy szót se."
+    ),
 }
 
 router = APIRouter(prefix="/api/voices", tags=["voices"])

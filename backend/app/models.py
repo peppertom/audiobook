@@ -87,6 +87,7 @@ class Chapter(Base):
     # JSON: [{"text": str, "type": str, "is_heading": bool, "word_count": int}]
     emotional_arc: Mapped[str | None] = mapped_column(Text, nullable=True)
     # JSON: {"dominant_emotion": str, "pacing": str, "intensity": int, "narrator_note": str}
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     book: Mapped["Book"] = relationship(back_populates="chapters")
 
 
