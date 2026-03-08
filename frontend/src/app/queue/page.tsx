@@ -406,18 +406,40 @@ export default function QueuePage() {
         </div>
       )}
 
-      <div className="space-y-2">
-        {[...jobs]
-          .sort((a, b) => {
-            const order = { processing: 0, queued: 1, done: 2, failed: 3 };
-            const ao = order[a.status as keyof typeof order] ?? 4;
-            const bo = order[b.status as keyof typeof order] ?? 4;
+      <div className="space-y-6">
+        {(() => {
+          const statusOrder = { processing: 0, queued: 1, done: 2, failed: 3 };
+          const sorted = [...jobs].sort((a, b) => {
+            const ao = statusOrder[a.status as keyof typeof statusOrder] ?? 4;
+            const bo = statusOrder[b.status as keyof typeof statusOrder] ?? 4;
             if (ao !== bo) return ao - bo;
             return (a.chapter_number ?? 0) - (b.chapter_number ?? 0);
-          })
-          .map((job) => (
-            <JobRow key={job.id} job={job} onCancel={cancelJob} onStart={startJob} />
-          ))}
+          });
+
+          // Group by book, preserving book order by first active status
+          const bookOrder: string[] = [];
+          const byBook: Record<string, Job[]> = {};
+          for (const job of sorted) {
+            const key = String(job.book_id ?? job.book_title ?? "Unknown");
+            if (!byBook[key]) { byBook[key] = []; bookOrder.push(key); }
+            byBook[key].push(job);
+          }
+
+          return bookOrder.map((key) => {
+            const bookJobs = byBook[key];
+            const title = bookJobs[0].book_title || `Book #${bookJobs[0].book_id}`;
+            return (
+              <div key={key} className="space-y-2">
+                <h2 className="text-sm font-semibold text-gray-400 px-1 border-b border-gray-800 pb-1">
+                  {title}
+                </h2>
+                {bookJobs.map((job) => (
+                  <JobRow key={job.id} job={job} onCancel={cancelJob} onStart={startJob} />
+                ))}
+              </div>
+            );
+          });
+        })()}
       </div>
 
       {jobs.length === 0 && (

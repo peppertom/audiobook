@@ -1,8 +1,83 @@
+import re
 from pathlib import Path
 from ebooklib import epub
 import ebooklib
 from bs4 import BeautifulSoup
 from app.services.text_normalizer import classify_segment, preprocess_for_tts
+
+# Hungarian capital letters (for sentence-start detection)
+_HU_UPPER = "A-ZÁÉÍÓÖŐÚÜŰ"
+
+
+def _extract_title_from_text(segments: list[dict], chapter_num: int) -> str:
+    """Extract a chapter title from parsed segments when no heading tag is present.
+
+    Uses the first segment's raw text if available, otherwise falls back to
+    joining all segment texts and scanning from the start.
+    """
+    if not segments:
+        return f"Chapter {chapter_num}"
+    # Try the first segment alone first (it may be a standalone title paragraph)
+    first = segments[0].get("raw_text", segments[0].get("text", "")).strip()
+    result = _extract_title_from_string(first, chapter_num)
+    if result != f"Chapter {chapter_num}":
+        return result
+    # Fall back to the full joined text
+    full = " ".join(s.get("raw_text", s.get("text", "")) for s in segments).strip()
+    return _extract_title_from_string(full, chapter_num)
+
+
+def _extract_title_from_string(text: str, chapter_num: int) -> str:
+    """Extract a chapter title from a raw string.
+
+    Two patterns:
+    1. Short segment with no terminal punctuation → the whole thing is the title.
+    2. Otherwise: scan word-by-word. The title is the initial words up to
+       (not including) the first subsequent word that starts with a Title-Case
+       letter (starts uppercase but is not ALL-CAPS). ALL-CAPS words (like
+       "FEJEZET") are kept as part of the title; single-letter uppercase words
+       (Hungarian articles "A") end the title.
+    """
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return f"Chapter {chapter_num}"
+
+    # Short text with no terminal punctuation → treat as standalone title line
+    if len(text) <= 80 and not re.search(r"[.!?…]\s*$", text):
+        return text
+
+    words = text.split(" ")
+
+    def _is_sentence_start(word: str) -> bool:
+        # Strip leading typographic punctuation
+        w = re.sub(r'^[„"«»\'"–—(]+', "", word)
+        if not w or not w[0].isalpha():
+            return False
+        first = w[0]
+        if not first.isupper():
+            return False
+        # Single uppercase letter (article "A") → sentence start
+        if len(w) == 1:
+            return True
+        # ALL-CAPS word (e.g. "FEJEZET", "ELSŐ") → still part of title
+        if w.upper() == w:
+            return False
+        # Title-Case word → sentence start
+        return True
+
+    # First word always belongs to the title
+    title_words = [words[0]]
+    for word in words[1:]:
+        if _is_sentence_start(word):
+            break
+        title_words.append(word)
+
+    candidate = " ".join(title_words).strip()
+    # Reject suspiciously long results
+    if len(title_words) > 10 or len(candidate) > 80:
+        return f"Chapter {chapter_num}"
+
+    return candidate or f"Chapter {chapter_num}"
 
 
 def extract_segments_from_html(html_content: str) -> list[dict]:
@@ -68,7 +143,7 @@ def parse_epub(file_path: Path) -> dict:
 
         chapter_num += 1
         heading_seg = next((s for s in segments if s["is_heading"]), None)
-        ch_title = heading_seg["text"] if heading_seg else f"Chapter {chapter_num}"
+        ch_title = heading_seg["text"] if heading_seg else _extract_title_from_text(segments, chapter_num)
 
         chapters.append({
             "chapter_number": chapter_num,

@@ -56,6 +56,16 @@ export const getChapterText = (bookId: number, chapterId: number) =>
   fetchApi<ChapterText>(`/api/books/${bookId}/chapters/${chapterId}/text`);
 export const getBookCostEstimate = (bookId: number) =>
   fetchApi<CostEstimate>(`/api/books/${bookId}/cost-estimate`);
+export const generateSummaries = (bookId: number) =>
+  fetchApi<{ generated: number; failed: number; total: number }>(
+    `/api/books/${bookId}/generate-summaries`,
+    { method: "POST" }
+  );
+export const generateChapterSummary = (bookId: number, chapterId: number) =>
+  fetchApi<{ summary: string }>(
+    `/api/books/${bookId}/chapters/${chapterId}/generate-summary`,
+    { method: "POST" }
+  );
 
 // Voices
 export const getVoices = () => fetchApi<Voice[]>("/api/voices");
@@ -149,6 +159,7 @@ export interface Book {
 }
 export interface Chapter {
   id: number; chapter_number: number; title: string; word_count: number;
+  summary: string | null;
 }
 export interface BookDetail extends Book { chapters: Chapter[]; }
 export interface Voice {
@@ -160,7 +171,7 @@ export interface TimingChunk {
   start: number; end: number; text: string;
 }
 export interface Job {
-  id: number; chapter_id: number; voice_id: number; status: string;
+  id: number; chapter_id: number; voice_id: number; book_id: number; status: string;
   audio_output_path: string | null; duration_seconds: number | null;
   timing_data: string | null;
   error_message: string | null; created_at: string; completed_at: string | null;

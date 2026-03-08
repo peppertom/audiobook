@@ -9,7 +9,8 @@ from app.database import get_db
 from app.config import settings
 from app.models import Book, Chapter, User
 from app.schemas import BookOut, BookDetailOut, CostEstimateResponse
-from app.services.epub_parser import parse_epub
+from app.services.epub_parser import parse_epub, _extract_title_from_text, _extract_title_from_string
+from app.services.llm_annotator import LLMAnnotator
 from app.services.credits import calculate_credits_needed, get_balance, WORDS_PER_CREDIT
 from app.auth import get_current_user
 
@@ -41,6 +42,7 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
     await db.flush()
 
     # Create chapter records
+    chapters = []
     for ch in parsed["chapters"]:
         chapter = Chapter(
             book_id=book.id,
@@ -51,6 +53,18 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
             segments=json.dumps(ch.get("segments", []), ensure_ascii=False),
         )
         db.add(chapter)
+        chapters.append((chapter, ch["text"]))
+
+    await db.flush()
+
+    # Generate summaries via LLM (non-blocking on failure)
+    language_map = {"hu": "Hungarian", "en": "English", "de": "German", "fr": "French"}
+    language = language_map.get(parsed["language"], "English")
+    annotator = LLMAnnotator(base_url=settings.ollama_url, model=settings.ollama_model)
+    for chapter, text in chapters:
+        summary = await annotator.generate_summary(text, language=language)
+        if summary:
+            chapter.summary = summary
 
     await db.commit()
     await db.refresh(book)
@@ -112,6 +126,86 @@ async def get_cost_estimate(
         current_balance=current_balance,
         sufficient_credits=current_balance >= credits_required,
     )
+
+
+@router.post("/{book_id}/chapters/{chapter_id}/generate-summary")
+async def generate_chapter_summary(book_id: int, chapter_id: int, db: AsyncSession = Depends(get_db)):
+    """Generate summary for a single chapter."""
+    result = await db.execute(
+        select(Chapter).where(Chapter.id == chapter_id, Chapter.book_id == book_id)
+    )
+    chapter = result.scalar_one_or_none()
+    if not chapter:
+        raise HTTPException(404, "Chapter not found")
+
+    book_result = await db.execute(select(Book).where(Book.id == book_id))
+    book = book_result.scalar_one_or_none()
+
+    language_map = {"hu": "Hungarian", "en": "English", "de": "German", "fr": "French"}
+    language = language_map.get(book.language if book else "hu", "Hungarian")
+    annotator = LLMAnnotator(base_url=settings.ollama_url, model=settings.ollama_model)
+
+    summary = await annotator.generate_summary(chapter.text_content, language=language)
+    if not summary:
+        raise HTTPException(503, "Summary generation failed. Is Ollama running?")
+
+    chapter.summary = summary
+    await db.commit()
+    return {"summary": summary}
+
+
+@router.post("/{book_id}/generate-summaries")
+async def generate_summaries(book_id: int, db: AsyncSession = Depends(get_db)):
+    """Generate summaries for all chapters that don't have one yet."""
+    result = await db.execute(
+        select(Book).where(Book.id == book_id).options(selectinload(Book.chapters))
+    )
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(404, "Book not found")
+
+    language_map = {"hu": "Hungarian", "en": "English", "de": "German", "fr": "French"}
+    language = language_map.get(book.language, "English")
+    annotator = LLMAnnotator(base_url=settings.ollama_url, model=settings.ollama_model)
+
+    generated = 0
+    failed = 0
+    for chapter in [ch for ch in book.chapters if not ch.summary]:
+        summary = await annotator.generate_summary(chapter.text_content, language=language)
+        if summary:
+            chapter.summary = summary
+            generated += 1
+        else:
+            failed += 1
+
+    await db.commit()
+    return {"generated": generated, "failed": failed, "total": len(book.chapters)}
+
+
+@router.post("/{book_id}/retitle-chapters")
+async def retitle_chapters(book_id: int, db: AsyncSession = Depends(get_db)):
+    """Re-extract chapter titles from stored segments for an already-imported book."""
+    result = await db.execute(
+        select(Book).where(Book.id == book_id).options(selectinload(Book.chapters))
+    )
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(404, "Book not found")
+
+    updated = 0
+    for ch in book.chapters:
+        segments = json.loads(ch.segments) if ch.segments else []
+        if segments:
+            new_title = _extract_title_from_text(segments, ch.chapter_number)
+        else:
+            # Fall back to plain text_content when segments weren't stored
+            new_title = _extract_title_from_string(ch.text_content or "", ch.chapter_number)
+        if new_title != ch.title:
+            ch.title = new_title
+            updated += 1
+
+    await db.commit()
+    return {"updated": updated, "total": len(book.chapters)}
 
 
 @router.delete("/{book_id}", status_code=204)
