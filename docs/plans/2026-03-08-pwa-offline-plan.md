@@ -38,7 +38,41 @@ caching stratégiákat – ezt kézzel megírni sok hiba forrása.
 Az original `next-pwa` nem támogatja az App Router-t stabilan. A `serwist`
 az utódja, kifejezetten erre fejlesztve.
 
-### 1.2 Offline adat-tárolás – IndexedDB (`idb` library)
+### 1.2 Storage tartóssága – a valóság
+
+A böngésző-alapú storage **alapból nem garantált tartós** – az OS, a böngésző
+vagy a felhasználó törölheti. Egyetlen dolog változtat ezen:
+
+```
+await navigator.storage.persist()  // → true ha megadják
+```
+
+Ha a persist() **`true`** értékkel tér vissza, a böngésző megígéri, hogy
+**nem törli az adatot automatikusan** (csak a user explicit törlésekor).
+Chrome akkor adja meg, ha: a PWA telepítve van, a site könyvjelzőzve van,
+vagy magas az engagement. Ez az **egyetlen legfontosabb hívás** az offline
+megbízhatósághoz.
+
+**Storage tartóssági hierarchia (persist() nélkül és után):**
+
+| Tároló | Persist() nélkül | Persist() után | Audio seeking |
+|---|---|---|---|
+| **OPFS** | ✅ Legtartósabb (fájlrendszer szint) | ✅ Garantált | ✅ Blob URL-en át |
+| **IndexedDB** | ⚠️ Törölhető nyomás alatt | ✅ Garantált | ✅ Blob URL-en át |
+| **Cache API** | ⚠️ LRU eviction, legsérülékenyebb | ✅ Garantált | ✅ Natív |
+| **localStorage** | ⚠️ Kis limit (~5MB), törölhető | ⚠️ Nem vonatkozik rá | ❌ |
+
+**Következtetés:** A `persist()` megadása után Cache API is tartós – de az
+**OPFS az optimális audio tárolóhely**, mert fájlrendszer szinten tárol,
+nincs kvóta-verseny más storage-dzsal, és a legnagyobb fájlokra is skálázódik.
+
+**A „Cache API-ban nincs Range request OPFS/IndexedDB-ből" tévhit:**
+Az `<audio>` elem csak akkor igényel Range request-et, ha hálózati URL-t kap.
+Ha `URL.createObjectURL(blob)`-ot kapva Blob URL-t kap, a böngésző **belsőleg
+szimulál** Range request-et a Blob-ból – seeking működik. Ez Chrome, Firefox
+és modern Safari esetén is igaz.
+
+### 1.3 Offline adat-tárolás – rétegezett stratégia
 
 ```
 npm install idb
@@ -46,16 +80,68 @@ npm install idb
 
 | Tároló | Mit tárol | Miért |
 |---|---|---|
-| **IndexedDB** | Könyv metaadatok, fejezet szövegek, hangok listája, letöltési állapot | Strukturált, nagy adatmennyiség, async |
-| **Cache API** | App shell, fontkészlet, API JSON válaszok (rövid TTL) | Service Worker natív tárolója |
-| **Cache API** | Audio fájlok (audio store) | Streaming-kompatibilis, Range request support |
-| **localStorage** | JWT token, felhasználói beállítások | Gyors, szinkron olvasás (kis adat) |
+| **OPFS** | Audio fájlok (.wav/.mp3) | Fájlrendszer szint, nagy fájl, tartós |
+| **IndexedDB** | Metaadatok, fejezet szövegek, letöltési állapot, olvasási pozíció | Strukturált, async, query-k |
+| **Cache API** | App shell, JS/CSS chunk-ok, fontkészlet, API JSON | Service Worker natív, precache-hez |
+| **localStorage** | JWT token, UI beállítások | Szinkron, kis adat |
 
-**Audio-specifikus megjegyzés:** A Cache API tárolja az audio fájlokat, mert
-támogatja a `Range` request-eket – ezt az `<audio>` elem megköveteli seekinghez.
-Az IndexedDB-ben tárolt Blob nem támogat Range request-et natívan.
+### 1.4 OPFS – Origin Private File System (az audio tárolója)
 
-### 1.3 Háttérletöltés – Background Fetch API
+Az OPFS egy **böngésző-privát fájlrendszer** – natív fájlokként tárolja az
+adatot, nem adatbázisként. Minden böngésző saját sandboxolt területe, a user
+nem látja a Fájlkezelőben, de az app igen.
+
+**Böngésző támogatás (2025):**
+- Chrome Android 86+ ✅
+- Safari iOS 15.2+ ✅
+- Firefox Android 111+ ✅
+
+**OPFS + Audio lejátszás flow:**
+
+```typescript
+// Mentés OPFS-be
+async function saveAudioToOPFS(chapterId: number, audioBuffer: ArrayBuffer) {
+  const root = await navigator.storage.getDirectory();
+  const audioDir = await root.getDirectoryHandle("audio", { create: true });
+  const fileHandle = await audioDir.getFileHandle(`chapter-${chapterId}.wav`, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(audioBuffer);
+  await writable.close();
+}
+
+// Visszaolvasás + lejátszás (Blob URL-en át → seeking működik)
+async function loadAudioFromOPFS(chapterId: number): Promise<string> {
+  const root = await navigator.storage.getDirectory();
+  const audioDir = await root.getDirectoryHandle("audio");
+  const fileHandle = await audioDir.getFileHandle(`chapter-${chapterId}.wav`);
+  const file = await fileHandle.getFile();           // File extends Blob
+  return URL.createObjectURL(file);                  // <audio src={url}> → seeking ✅
+}
+
+// Törlés
+async function deleteAudioFromOPFS(chapterId: number) {
+  const root = await navigator.storage.getDirectory();
+  const audioDir = await root.getDirectoryHandle("audio");
+  await audioDir.removeEntry(`chapter-${chapterId}.wav`);
+}
+```
+
+**Nagy fájlok írása Worker-ben (nem blokkolja a UI-t):**
+
+```typescript
+// OPFS synchronous access csak Dedicated Worker-ben érhető el
+// → a letöltési logika Worker-be kerül, a fő szál blokkolás-mentes marad
+
+// worker: opfs-worker.ts
+const root = await navigator.storage.getDirectory();
+const fileHandle = await root.getFileHandle(`chapter-${id}.wav`, { create: true });
+const syncHandle = await fileHandle.createSyncAccessHandle();  // Worker-only API
+syncHandle.write(new Uint8Array(buffer));
+syncHandle.flush();
+syncHandle.close();
+```
+
+### 1.5 Háttérletöltés – Background Fetch API
 
 A Background Fetch API lehetővé teszi, hogy **az app bezárása után is fusson
 a letöltés**. Ha a böngésző támogatja (Chrome Android, Edge), a nagy audio
@@ -63,11 +149,10 @@ fájlok letölthetők háttérben, miközben a user más alkalmazást használ.
 
 Fallback: normál `fetch` + progress tracking, ha a browser nem támogatja.
 
-### 1.4 Storage kezelés
+### 1.6 Storage kezelés
 
-- **`navigator.storage.persist()`**: tartós tárolás kérése (nem törli az OS az adatot)
-- **`navigator.storage.estimate()`**: szabad hely lekérdezése, quota megjelenítése
-- **Origin Private File System (OPFS)**: alternatíva nagyon nagy fájlokhoz (jövő)
+- **`navigator.storage.persist()`**: tartós tárolás kérése – **elsők között hívandó**, OPFS első letöltésekor
+- **`navigator.storage.estimate()`**: szabad hely és kvóta megjelenítése az UI-ban
 
 ---
 
@@ -222,19 +307,20 @@ const serwist = new Serwist({
       }),
     },
 
-    // 5. Audio fájlok – CacheFirst, csak ha offline letöltött
-    //    A tényleges letöltést az OfflineManager végzi (nem SW precache)
+    // 5. Audio fájlok – NEM Cache API-ban tároljuk!
+    //    Az audio fájlokat OPFS-ben tárolja az OfflineManager.
+    //    A SW csak akkor intercept-eli, ha a request OPFS-ből jön Blob URL-ként
+    //    → ilyenkor a SW-nek nem kell tennie semmit, a Blob URL direkt elérhető.
+    //    Ha valami mégis a hálózati audio URL-t kéri offline módban:
     {
       matcher: /\/static\/audio\//,
-      handler: new CacheFirst({
-        cacheName: "audio-files",
-        plugins: [
-          { maxEntries: 1000 },    // korlátlan méret – user választja mi kerül be
-        ],
+      handler: new NetworkOnly({
+        // Ha nincs net és nincs OPFS fallback, a player jelzi a hibát.
+        // Nem cache-elünk audio-t Cache API-ba – az OPFS az elsődleges tároló.
       }),
     },
 
-    // 6. Voice sample/reference clips
+    // 6. Voice sample/reference clips – kis fájlok, Cache API megfelelő
     {
       matcher: /\/static\/(voices|samples)\//,
       handler: new CacheFirst({
@@ -435,24 +521,29 @@ export class OfflineManager {
       await this.downloadChapterText(bookId, chapter.id);
     }
 
-    // 3. Audio letöltés (Background Fetch ha elérhető)
+    // 3. Audio letöltés → OPFS-be mentés (nem Cache API-ba!)
     if (includeAudio && voiceId) {
-      if ("BackgroundFetchManager" in self.registration) {
+      // persist() kérés az első letöltés előtt – kritikus!
+      await navigator.storage.persist();
+
+      const sw = await navigator.serviceWorker.ready;
+      if ("backgroundFetch" in sw) {
         await this.startBackgroundFetch(bookId, voiceId);
       } else {
-        await this.downloadAudioFallback(bookId, voiceId);
+        await this.downloadAudioToOPFS(bookId, voiceId);
       }
     }
   }
 
-  // Background Fetch API – háttérben fut, app bezárása után is
+  // Background Fetch → a SW backgroundfetchsuccess event-ben menti OPFS-be
   private async startBackgroundFetch(bookId: number, voiceId: number) {
     const audioUrls = await this.getAudioUrls(bookId, voiceId);
     const totalSize = await this.estimateAudioSize(audioUrls);
+    const sw = await navigator.serviceWorker.ready;
 
-    const registration = await self.registration.backgroundFetch.fetch(
-      `book-${bookId}-voice-${voiceId}`,  // unique ID
-      audioUrls,
+    const registration = await (sw as any).backgroundFetch.fetch(
+      `book-${bookId}-voice-${voiceId}`,
+      audioUrls.map(a => a.url),
       {
         title: `Könyv letöltése...`,
         icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
@@ -460,25 +551,43 @@ export class OfflineManager {
       }
     );
 
-    // Progress tracking
     registration.addEventListener("progress", () => {
       const percent = registration.downloaded / registration.downloadTotal * 100;
       this.updateDownloadProgress(bookId, percent);
     });
   }
 
-  // Fallback: normál fetch, ha Background Fetch nem elérhető
-  private async downloadAudioFallback(bookId: number, voiceId: number) {
+  // Fallback: normál fetch → OPFS-be írás (app előtérben kell maradjon)
+  async downloadAudioToOPFS(bookId: number, voiceId: number) {
     const audioUrls = await this.getAudioUrls(bookId, voiceId);
-    const cache = await caches.open("audio-files");
+    const root = await navigator.storage.getDirectory();
+    const audioDir = await root.getDirectoryHandle("audio", { create: true });
 
     for (let i = 0; i < audioUrls.length; i++) {
-      const url = audioUrls[i];
-      if (!(await cache.match(url))) {
-        const response = await fetch(url);
-        await cache.put(url, response);
-      }
+      const { url, chapterId } = audioUrls[i];
+      const response = await fetch(url, { headers: authHeaders() });
+      const buffer = await response.arrayBuffer();
+
+      const fileHandle = await audioDir.getFileHandle(`chapter-${chapterId}.wav`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(buffer);
+      await writable.close();
+
       this.updateDownloadProgress(bookId, (i + 1) / audioUrls.length * 100);
+    }
+  }
+
+  // Audio URL visszaadása lejátszáshoz: OPFS → Blob URL → seeking ✅
+  async getAudioSrc(chapterId: number): Promise<string> {
+    try {
+      const root = await navigator.storage.getDirectory();
+      const audioDir = await root.getDirectoryHandle("audio");
+      const fileHandle = await audioDir.getFileHandle(`chapter-${chapterId}.wav`);
+      const file = await fileHandle.getFile();
+      return URL.createObjectURL(file);   // Blob URL, browser kezeli a Range-et
+    } catch {
+      // Nincs OPFS-ben → hálózatról (online mód)
+      return `${API_BASE}/static/audio/chapter-${chapterId}.wav`;
     }
   }
 
@@ -769,6 +878,8 @@ export default function OfflinePage() {
 | Service Worker | ✅ | ✅ (iOS 16.4+) | ✅ |
 | Cache API | ✅ | ✅ | ✅ |
 | IndexedDB | ✅ | ✅ | ✅ |
+| **OPFS** | ✅ (Chrome 86+) | ✅ (iOS 15.2+) | ✅ (111+) |
+| **OPFS sync (Worker)** | ✅ | ✅ | ✅ |
 | Background Fetch | ✅ | ❌ | ❌ |
 | Background Sync | ✅ | ❌ | ❌ |
 | Media Session | ✅ | ✅ (iOS 15+) | ✅ |
@@ -776,6 +887,10 @@ export default function OfflinePage() {
 | `navigator.storage.persist()` | ✅ | ⚠️ korlátozott | ✅ |
 | File Handlers | ✅ | ❌ | ❌ |
 | Maskable Icons | ✅ | ✅ | ✅ |
+
+**OPFS iOS megjegyzés:** iOS 15.2-től elérhető, de a szinkron `createSyncAccessHandle()`
+Worker-ben fut – ez a mi architektúránkban is így van, tehát iOS-on is teljes OPFS
+támogatás érhető el.
 
 **iOS-specifikus korlátozások:**
 - Safari iOS-on a PWA csak a „Share → Képernyőre adás" menüből telepíthető
@@ -906,7 +1021,8 @@ frontend/
 │   ├── sw.ts                            # Service Worker forrás
 │   ├── lib/
 │   │   ├── offline-db.ts               # IndexedDB séma (idb)
-│   │   ├── offline-manager.ts          # Letöltési logika
+│   │   ├── offline-manager.ts          # Letöltési logika (OPFS + BG Fetch)
+│   │   ├── opfs-worker.ts              # Dedicated Worker: OPFS szinkron írás
 │   │   ├── media-session.ts            # Media Session API wrapper
 │   │   └── storage-utils.ts            # Quota, persist helpers
 │   ├── components/
