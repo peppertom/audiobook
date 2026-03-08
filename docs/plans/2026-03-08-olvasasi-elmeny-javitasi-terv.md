@@ -1,7 +1,7 @@
 # Olvasási élmény javítási terv (Audiobook app)
 
 **Dátum:** 2026-03-08  
-**Fókusz:** könyvolvasási élmény jelentős javítása, személyre szabható tipográfia, fókuszált olvasás mód, szinkronizált előrehaladás mentés.
+**Fókusz:** könyvolvasási élmény jelentős javítása, személyre szabható tipográfia, fókuszált olvasás mód, szinkronizált előrehaladás mentés, teljes körű PWA és offline mobil élmény.
 
 ## 1. Célok és sikerkritériumok
 
@@ -200,3 +200,110 @@
 4. Continue UX és mikrointerakciók.
 5. Prémium kiegészítők (theme, notes, highlight sync).
 
+
+---
+
+## 9. Teljes körű PWA támogatás (offline olvasás és hallgatás)
+
+### 9.1 Cél
+- Az app **installálható PWA-ként** működjön mobilon és desktopon.
+- A felhasználó internet nélkül is tudjon:
+  - letöltött könyvet olvasni,
+  - letöltött audio chaptereket hallgatni,
+  - ott folytatni, ahol abbahagyta.
+
+### 9.2 Kötelező PWA elemek
+1. **Web App Manifest**
+   - Név, rövid név, ikonok (192/512), `display: standalone`, theme/background színek.
+   - App shortcutok: „Folytatás”, „Könyvtár”, „Letöltések”.
+2. **Service Worker (SW)**
+   - App shell cache (HTML/CSS/JS/font/icon).
+   - Runtime cache API hívásokhoz és statikus erőforrásokhoz.
+   - Offline fallback oldalak és UI állapotok.
+3. **Install UX**
+   - „Telepítés” CTA megfelelő időben (nem tolakodó).
+   - Telepítés után rövid onboarding az offline funkciókról.
+
+### 9.3 Offline tartalomstratégia
+
+#### Olvasási tartalom
+- Chapter szövegek IndexedDB-ben tárolva könyvenként/chapterenként.
+- Verziózott tartalom (`content_version`) a frissítések kezelésére.
+- Delta frissítés preferált (ha backend támogatja), különben chapter-szintű újrahúzás.
+
+#### Audio tartalom
+- Audio fájlok chunkolt vagy chapter szintű letöltése.
+- Letöltési profilok:
+  - **Eco** (alacsonyabb bitráta),
+  - **Standard**,
+  - **High** (Wi-Fi ajánlott).
+- Tárhely limit figyelés és „smart cleanup” (régen hallgatott elemek archiválása/törlése).
+
+### 9.4 Cache policy (javaslat)
+- **App shell**: cache-first.
+- **Könyv metadata / könyvtár**: stale-while-revalidate.
+- **Chapter text**: network-first online, offline fallback IndexedDB.
+- **Audio stream/asset**: cache-first letöltött tartalomnál, különben network.
+
+### 9.5 Offline progress és szinkron
+- Progress mentés offline queue-ba (olvasási anchor + audio timestamp).
+- Újra online állapotban konfliktuskezelés:
+  - alapértelmezett: **latest update wins**,
+  - opcionális: „melyik eszköz állását tartod meg?” feloldó modal.
+- Sync státusz kijelzés: „Utolsó szinkron: 3 perce”.
+
+### 9.6 Mobil UX internet nélkül ("fantasztikus élmény")
+- Egyértelmű offline badge és kapcsolat státusz.
+- Letöltések képernyő:
+  - könyvenkénti foglaltság,
+  - hátralévő tárhely,
+  - batch műveletek (szünet/törlés/prioritás).
+- Gyorsindítás: app megnyitásakor automatikus „Folytatás offline” CTA, ha nincs net.
+- Audio vezérlés lock-screen / background támogatással (platform korlátok figyelembevételével).
+- Alacsony akkumulátor mód jelzése és energiatakarékos opció (pl. animációk csökkentése).
+
+### 9.7 Technikai architektúra (rövid)
+- **Storage**
+  - IndexedDB: chapter text, beállítások, progress queue.
+  - Cache Storage: app shell + média cache.
+- **Sync engine**
+  - Background Sync (ha támogatott), fallback foreground retry.
+- **Download manager**
+  - Soros/párhuzamos letöltés limit,
+  - újrapróbálás exponenciális visszalépéssel,
+  - megszakítás utáni folytatás.
+
+### 9.8 Biztonság és jogosultság
+- Titkosított transport (HTTPS kötelező a PWA/SW miatt).
+- Lokálisan tárolt tokenek minimalizálása, rövid élettartamú session stratégia.
+- DRM/licenc-érzékeny audio esetén opcionális védett URL/token rotáció.
+
+### 9.9 Minőségbiztosítás (PWA specifikus)
+- Lighthouse PWA audit cél: 90+.
+- Tesztmátrix:
+  - Android Chrome,
+  - iOS Safari (korlátozott PWA képességek külön ellenőrzéssel),
+  - Desktop Chrome/Edge.
+- Szenáriók:
+  - telepítés,
+  - offline első indítás,
+  - részleges letöltés,
+  - sync konfliktus,
+  - alacsony tárhely.
+
+### 9.10 PWA-hoz kapcsolódó elfogadási kritériumok
+1. Az app telepíthető és standalone módban stabilan fut.
+2. Legalább 1 teljes könyv (szöveg + audio) offline elérhető.
+3. Offline olvasási és hallgatási progress mentés működik, majd online szinkronizál.
+4. A felhasználó látja a letöltési és szinkron státuszát.
+5. Gyenge vagy nulla hálózaton is megmarad a folyamatos, akadásmentes alapélmény.
+
+---
+
+## 10. Bővített ütemezés (PWA-val)
+
+1. **P0 Alap**: manifest + SW + app shell cache + telepítés UX.
+2. **P1 Offline olvasás**: chapter letöltés, IndexedDB, offline chapter megnyitás.
+3. **P2 Offline audio**: download manager, minőségprofilok, tárhelykezelés.
+4. **P3 Offline progress sync**: queue, konfliktuskezelés, sync státusz UI.
+5. **P4 Polishing**: lock-screen controls, battery saver UX, telemetria + optimalizálás.
