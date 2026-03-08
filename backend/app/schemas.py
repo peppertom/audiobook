@@ -37,6 +37,16 @@ class UserSettingsResponse(BaseModel):
     email_notifications: bool
     theme: str
     ui_language: str
+    reading_font_family: str = "Literata"
+    reading_font_size: int = 18
+    reading_line_height: float = 1.7
+    reading_word_spacing: int = 0
+    reading_letter_spacing: int = 0
+    reading_max_width: int = 680
+    reading_theme: str = "dark"
+    reading_custom_bg: str = "#1A1A2E"
+    reading_custom_text: str = "#E8E8E8"
+    reading_focus_line: bool = False
     model_config = {"from_attributes": True}
 
 
@@ -46,6 +56,16 @@ class UserSettingsUpdate(BaseModel):
     email_notifications: bool | None = None
     theme: str | None = None
     ui_language: str | None = None
+    reading_font_family: str | None = None
+    reading_font_size: int | None = None
+    reading_line_height: float | None = None
+    reading_word_spacing: int | None = None
+    reading_letter_spacing: int | None = None
+    reading_max_width: int | None = None
+    reading_theme: str | None = None
+    reading_custom_bg: str | None = None
+    reading_custom_text: str | None = None
+    reading_focus_line: bool | None = None
 
 
 class CreditBalanceResponse(BaseModel):
@@ -148,6 +168,29 @@ class JobDetailOut(JobOut):
     chapter_number: int = 0
     book_title: str = ""
     voice_name: str = ""
+
+
+# --- Reading State ---
+class ReadingStateOut(BaseModel):
+    id: int
+    book_id: int
+    current_chapter_id: int
+    scroll_position: float
+    paragraph_index: int
+    reading_progress: float
+    audio_position: float
+    voice_id: int | None
+    updated_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class ReadingStateUpdate(BaseModel):
+    current_chapter_id: int
+    scroll_position: float = 0.0
+    paragraph_index: int = 0
+    reading_progress: float = 0.0
+    audio_position: float = 0.0
+    voice_id: int | None = None
 
 
 # --- Playback ---

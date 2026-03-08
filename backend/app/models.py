@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Integer, Text, Float, ForeignKey, DateTime, Boolean, func
+from sqlalchemy import String, Integer, Text, Float, ForeignKey, DateTime, Boolean, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -32,6 +32,17 @@ class UserSettings(Base):
     email_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
     theme: Mapped[str] = mapped_column(String(20), default="system")
     ui_language: Mapped[str] = mapped_column(String(5), default="en")
+    # Reading typography
+    reading_font_family: Mapped[str] = mapped_column(String(50), default="Literata")
+    reading_font_size: Mapped[int] = mapped_column(Integer, default=18)
+    reading_line_height: Mapped[float] = mapped_column(Float, default=1.7)
+    reading_word_spacing: Mapped[int] = mapped_column(Integer, default=0)
+    reading_letter_spacing: Mapped[int] = mapped_column(Integer, default=0)
+    reading_max_width: Mapped[int] = mapped_column(Integer, default=680)
+    reading_theme: Mapped[str] = mapped_column(String(20), default="dark")
+    reading_custom_bg: Mapped[str] = mapped_column(String(7), default="#1A1A2E")
+    reading_custom_text: Mapped[str] = mapped_column(String(7), default="#E8E8E8")
+    reading_focus_line: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="settings")
@@ -122,6 +133,21 @@ class Job(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     chapter: Mapped["Chapter"] = relationship()
     voice: Mapped["Voice"] = relationship()
+
+
+class ReadingState(Base):
+    __tablename__ = "reading_states"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"))
+    book_id: Mapped[int] = mapped_column(Integer, ForeignKey("books.id", ondelete="CASCADE"))
+    current_chapter_id: Mapped[int] = mapped_column(Integer, ForeignKey("chapters.id", ondelete="CASCADE"))
+    scroll_position: Mapped[float] = mapped_column(Float, default=0.0)
+    paragraph_index: Mapped[int] = mapped_column(Integer, default=0)
+    reading_progress: Mapped[float] = mapped_column(Float, default=0.0)  # 0.0–1.0 book-wide
+    audio_position: Mapped[float] = mapped_column(Float, default=0.0)
+    voice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (UniqueConstraint("user_id", "book_id", name="uq_reading_state_user_book"),)
 
 
 class PlaybackState(Base):

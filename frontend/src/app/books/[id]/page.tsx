@@ -7,6 +7,9 @@ import {
 } from "@/lib/api";
 import { usePlayer } from "@/lib/player-context";
 import VoiceSelector from "@/components/VoiceSelector";
+import ReadingModeOverlay from "@/components/ReadingMode/ReadingModeOverlay";
+import ResumePrompt from "@/components/ResumePrompt";
+import { getReadingState, ReadingState } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -239,11 +242,19 @@ export default function BookDetailPage() {
   const [summaryLoadingChapters, setSummaryLoadingChapters] = useState<Set<number>>(new Set());
   const [voices, setVoices] = useState<Voice[]>([]);
   const [chapterVoices, setChapterVoices] = useState<Record<number, number>>({});
+  const [readingMode, setReadingMode] = useState(false);
+  const [readingChapterId, setReadingChapterId] = useState<number | null>(null);
+  const [readingChapterText, setReadingChapterText] = useState<string | null>(null);
+  const [readingChapterTextLoading, setReadingChapterTextLoading] = useState(false);
+  const [resumeState, setResumeState] = useState<ReadingState | null>(null);
 
   useEffect(() => {
     if (id) {
       getBook(Number(id)).then(setBook).catch(() => {});
       getBookJobs(Number(id)).then(setJobs).catch(() => {});
+      getReadingState(Number(id))
+        .then((state) => { if (state.reading_progress > 0) setResumeState(state); })
+        .catch(() => {});
     }
     getVoices().then(setVoices).catch(() => {});
   }, [id]);
@@ -268,6 +279,45 @@ export default function BookDetailPage() {
   const setChapterVoice = (chapterId: number, voiceId: number) => {
     setChapterVoices((prev) => ({ ...prev, [chapterId]: voiceId }));
   };
+
+  // Load chapter text for reading mode
+  const openReadingMode = useCallback(async (chapterId: number) => {
+    setReadingChapterId(chapterId);
+    setReadingMode(true);
+    setReadingChapterText(null);
+    setReadingChapterTextLoading(true);
+    try {
+      const data = await getChapterText(Number(id), chapterId);
+      setReadingChapterText(data.text_content);
+    } catch {
+      setReadingChapterText("Nem sikerült betölteni a szöveget.");
+    } finally {
+      setReadingChapterTextLoading(false);
+    }
+  }, [id]);
+
+  const handleReadingChapterSelect = useCallback((chapterId: number) => {
+    setReadingChapterId(chapterId);
+    openReadingMode(chapterId);
+  }, [openReadingMode]);
+
+  // F key toggles reading mode (opens first chapter if none active)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "f" || e.key === "F") {
+        if (readingMode) {
+          setReadingMode(false);
+        } else if (book) {
+          const first = book.chapters[0];
+          if (first) openReadingMode(readingChapterId ?? first.id);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [readingMode, book, readingChapterId, openReadingMode]);
 
   const handleRetitle = async () => {
     if (!book) return;
@@ -367,8 +417,51 @@ export default function BookDetailPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold">{book.title}</h1>
-      <p className="text-gray-400 mt-1">{book.author}</p>
+      {/* Resume Prompt */}
+      {resumeState && !readingMode && (
+        <ResumePrompt
+          state={resumeState}
+          book={book}
+          onResume={() => {
+            setResumeState(null);
+            openReadingMode(resumeState.current_chapter_id);
+          }}
+          onStartOver={() => {
+            setResumeState(null);
+            openReadingMode(book.chapters[0]?.id ?? book.chapters[0].id);
+          }}
+        />
+      )}
+
+      {/* Reading Mode Overlay */}
+      {readingMode && readingChapterId && (
+        <ReadingModeOverlay
+          book={book}
+          currentChapterId={readingChapterId}
+          onClose={() => setReadingMode(false)}
+          onChapterSelect={handleReadingChapterSelect}
+          chapterText={readingChapterText}
+          chapterTextLoading={readingChapterTextLoading}
+        />
+      )}
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">{book.title}</h1>
+          <p className="text-gray-400 mt-1">{book.author}</p>
+        </div>
+        <button
+          onClick={() => {
+            const first = book.chapters[0];
+            if (first) openReadingMode(readingChapterId ?? first.id);
+          }}
+          className="shrink-0 mt-1 flex items-center gap-2 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm transition"
+          title="Olvasási mód (F)"
+        >
+          <span>📖</span>
+          <span>Olvasási mód</span>
+        </button>
+      </div>
 
       <div className="mt-6">
         <h2 className="text-lg font-semibold mb-3">
@@ -447,6 +540,13 @@ export default function BookDetailPage() {
                       </div>
                     )}
                     <button
+                      onClick={() => openReadingMode(ch.id)}
+                      className="shrink-0 text-gray-600 hover:text-gray-300 transition text-sm"
+                      title="Olvasási mód"
+                    >
+                      📖
+                    </button>
+                    <button
                       onClick={() => toggleChapterText(ch.id)}
                       className="text-left flex items-center gap-2 hover:text-blue-400 transition min-w-0"
                     >
@@ -476,20 +576,19 @@ export default function BookDetailPage() {
                         ))}
                       </select>
                     )}
-                    {doneJob ? (
-                      <div className="text-right">
-                        <div className="text-gray-300 text-sm">
-                          {formatTime(doneJob.duration_seconds ?? 0)}
-                        </div>
-                        <div className="text-gray-500 text-xs">
-                          {ch.word_count.toLocaleString()} words
-                        </div>
+                    <div className="text-right shrink-0">
+                      {doneJob ? (
+                        <div className="text-gray-300 text-sm">{formatTime(doneJob.duration_seconds ?? 0)}</div>
+                      ) : null}
+                      <div className="text-gray-500 text-xs">
+                        ~{Math.max(1, Math.ceil(ch.word_count / 200))} perc
                       </div>
-                    ) : (
-                      <span className="text-gray-500 text-sm">
-                        {ch.word_count.toLocaleString()} w
-                      </span>
-                    )}
+                      {resumeState?.current_chapter_id === ch.id && (
+                        <div className="text-blue-400 text-xs tabular-nums">
+                          {Math.round(resumeState.reading_progress * 100)}%
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {/* Summary toggle */}

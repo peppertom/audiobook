@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { getUserSettings, updateUserSettings, UserSettings } from "@/lib/api";
-import { Loader2, Check } from "lucide-react";
+import { Loader2, Check, BookOpen } from "lucide-react";
 
 const SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 const QUALITY_OPTIONS = ["standard", "high"];
@@ -74,6 +75,21 @@ export default function SettingsPage() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
+
+      {/* Reading settings shortcut */}
+      <Link
+        href="/settings/reading"
+        className="flex items-center justify-between bg-gray-900 rounded-xl p-5 mb-6 hover:bg-gray-800/80 transition group"
+      >
+        <div className="flex items-center gap-3">
+          <BookOpen size={20} className="text-blue-400" />
+          <div>
+            <p className="text-sm font-medium">Olvasási beállítások</p>
+            <p className="text-xs text-gray-500 mt-0.5">Betűtípus, témák, fókusz mód</p>
+          </div>
+        </div>
+        <span className="text-gray-600 group-hover:text-gray-400 transition">→</span>
+      </Link>
 
       {/* Playback section */}
       <section className="bg-gray-900 rounded-xl p-6 mb-6">

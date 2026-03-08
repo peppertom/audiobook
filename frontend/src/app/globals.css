@@ -17,3 +17,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* Reading mode theme transitions */
+[data-reading-overlay] {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+[data-reading-overlay] p {
+  transition: opacity 0.3s ease;
+}
