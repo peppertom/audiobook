@@ -7,8 +7,8 @@ BACKEND_VENV    := backend/.venv/bin
 WORKTREE_BACKEND := backend/../.worktrees/production-pipeline/backend
 
 .PHONY: help up down restart logs \
-        worker worker-new-code worker-setup \
-        dev-infra \
+        worker worker-new worker-setup worker-check \
+        dev dev-infra \
         test lint \
         db-shell redis-shell \
         build rebuild
@@ -18,20 +18,19 @@ help:
 	@echo ""
 	@echo "  Development"
 	@echo "  -----------"
-	@echo "  make up              Start all Docker services (infra + backend + frontend)"
-	@echo "  make dev             Start all Docker services + print worker command (worker runs locally)"
-	@echo "  make dev-infra       Start only Redis + Postgres in Docker (backend/worker run natively)"
-	@echo "  make worker          Start local ARQ worker (main branch code, MPS)"
-	@echo "  make worker-new      Start local ARQ worker (feat/production-quality-pipeline)"
+	@echo "  make up              Start Docker services (infra + backend + frontend, no worker)"
+	@echo "  make dev             Same as up + reminder to start local worker"
+	@echo "  make dev-infra       Start only Redis + Postgres in Docker"
+	@echo "  make worker          Start local ARQ worker on MPS (run in separate terminal)"
+	@echo "  make worker-new      Start local ARQ worker from production-pipeline worktree"
 	@echo "  make worker-setup    Create worker-venv with torch + coqui-tts (run once)"
 	@echo ""
 	@echo "  Management"
 	@echo "  ----------"
 	@echo "  make down            Stop all Docker services"
-	@echo "  make restart         Restart backend + worker Docker containers"
+	@echo "  make restart         Restart backend Docker container"
 	@echo "  make rebuild         Rebuild and restart all Docker containers"
 	@echo "  make logs            Follow all Docker service logs"
-	@echo "  make logs-worker     Follow worker logs only"
 	@echo "  make logs-backend    Follow backend logs only"
 	@echo ""
 	@echo "  Quality"
@@ -53,16 +52,13 @@ down:
 	$(DOCKER_COMPOSE) down
 
 restart:
-	$(DOCKER_COMPOSE) restart backend worker
+	$(DOCKER_COMPOSE) restart backend
 
 rebuild:
 	$(DOCKER_COMPOSE) up -d --build
 
 logs:
 	$(DOCKER_COMPOSE) logs -f
-
-logs-worker:
-	$(DOCKER_COMPOSE) logs -f worker
 
 logs-backend:
 	$(DOCKER_COMPOSE) logs -f backend

@@ -55,11 +55,15 @@ class LLMAnnotator:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
+                    "think": False,
                 },
             )
             response.raise_for_status()
             data = response.json()
-            return json.loads(data["response"])
+            # qwen3 models with thinking mode put output in "thinking" field when
+            # format:json is used; fall back to it if "response" is empty
+            raw = data.get("response") or data.get("thinking", "")
+            return json.loads(raw)
 
     async def generate_summary(self, chapter_text: str, language: str = "Hungarian") -> str:
         """Generate a short chapter summary. Returns empty string on error."""

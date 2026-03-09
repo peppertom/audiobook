@@ -274,7 +274,8 @@ export default function QueuePage() {
 
   useEffect(() => {
     refresh();
-    const interval = setInterval(refresh, 3000);
+    // Poll every 10 seconds while jobs are active
+    const interval = setInterval(refresh, 10000);
     return () => clearInterval(interval);
   }, []);
 

@@ -2,6 +2,7 @@ import json
 import logging
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 from typing import Literal
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -31,6 +32,14 @@ def convert_to_wav(input_path: Path, output_path: Path) -> Path:
     except subprocess.CalledProcessError as e:
         logger.error(f"ffmpeg conversion failed: {e.stderr}")
         raise HTTPException(400, f"Audio conversion failed: {e.stderr.strip() if e.stderr else 'Unknown ffmpeg error'}")
+    # Validate output: must be a readable WAV with actual audio frames
+    try:
+        with wave.open(str(output_path), "rb") as wf:
+            if wf.getnframes() == 0:
+                raise HTTPException(400, "A felvétel üres vagy túl rövid. Kérjük, vegyél fel legalább 1 másodpercnyi hangot.")
+    except wave.Error:
+        raise HTTPException(400, "Az átalakítás nem hozott létre érvényes WAV fájlt. Ellenőrizd a feltöltött hangfájlt.")
+
     # Clean up original if different from output
     if input_path != output_path and input_path.exists():
         input_path.unlink()

@@ -266,7 +266,7 @@ export default function BookDetailPage() {
     if (!hasActive && jobs.length > 0) return;
     const interval = setInterval(() => {
       getBookJobs(Number(id)).then(setJobs).catch(() => {});
-    }, 3000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [id, jobs]);
 

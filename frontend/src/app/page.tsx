@@ -51,17 +51,7 @@ export default function LibraryPage() {
     getJobs().then(setJobs).catch(() => {});
   }, []);
 
-  // Poll jobs for active status
-  useEffect(() => {
-    const hasActive = jobs.some(
-      (j) => j.status === "processing" || j.status === "queued",
-    );
-    if (!hasActive) return;
-    const interval = setInterval(() => {
-      getJobs().then(setJobs).catch(() => {});
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [jobs]);
+
 
   const enriched = useMemo(() => enrichBooks(books, jobs), [books, jobs]);
 

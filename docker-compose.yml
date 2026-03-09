@@ -5,11 +5,10 @@ services:
       - "3000:3000"
     environment:
       - BACKEND_INTERNAL_URL=http://backend:9000
-      # - NEXT_PUBLIC_API_URL=https://4fe5-2a02-ab88-278f-d800-100f-3c00-9829-2918.ngrok-free.app
-      - NEXT_PUBLIC_API_URL=http://localhost:9000
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/next.config.ts:/app/next.config.ts
+      - ./.env:/app/.env:ro
     depends_on:
       backend:
         condition: service_started
@@ -27,23 +26,6 @@ services:
       - AUDIOBOOK_STORAGE_PATH=/app/storage
       - AUDIOBOOK_CORS_ORIGINS=*
       - AUDIOBOOK_OLLAMA_URL=http://host.docker.internal:11434
-    depends_on:
-      redis:
-        condition: service_started
-      postgres:
-        condition: service_healthy
-
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.worker
-    volumes:
-      - ./backend/storage:/app/storage
-      - ./backend/app:/app/app
-    environment:
-      - AUDIOBOOK_REDIS_URL=redis://redis:6379
-      - AUDIOBOOK_DATABASE_URL=postgresql+asyncpg://audiobook:audiobook_dev@postgres:5432/audiobook
-      - AUDIOBOOK_STORAGE_PATH=/app/storage
     depends_on:
       redis:
         condition: service_started
