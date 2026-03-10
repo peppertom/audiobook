@@ -241,4 +241,4 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = 1
-    job_timeout = 3600  # 1 hour — CPU TTS is ~50x slower than GPU
+    job_timeout = 7200  # 1 hour — CPU TTS is ~50x slower than GPU
