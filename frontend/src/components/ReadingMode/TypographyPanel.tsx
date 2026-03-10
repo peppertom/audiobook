@@ -221,6 +221,25 @@ export default function TypographyPanel() {
               onChange={(v) => updateSetting("maxWidth", v)}
             />
 
+            {/* Focus line toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs opacity-70">Fókusz mód (L)</span>
+              <button
+                onClick={() => updateSetting("focusLine", !settings.focusLine)}
+                className={`relative w-9 h-5 rounded-full transition-colors ${
+                  settings.focusLine ? "bg-blue-600" : "bg-gray-700"
+                }`}
+                role="switch"
+                aria-checked={settings.focusLine}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                    settings.focusLine ? "translate-x-4" : ""
+                  }`}
+                />
+              </button>
+            </div>
+
             {/* Themes */}
             <div>
               <p className="text-xs opacity-60 mb-2">Téma</p>

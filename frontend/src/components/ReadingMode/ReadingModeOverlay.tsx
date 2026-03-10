@@ -1,13 +1,10 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { BookDetail, saveReadingState } from "@/lib/api";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { BookDetail } from "@/lib/api";
 import { useReadingSettings } from "@/contexts/ReadingSettingsContext";
-import { usePlayer } from "@/lib/player-context";
-import { usePagination } from "@/hooks/usePagination";
 import MiniPlayer from "./MiniPlayer";
 import ChapterSidebar from "./ChapterSidebar";
 import TypographyPanel from "./TypographyPanel";
-import PageView from "./PageView";
 
 interface Props {
   book: BookDetail;
@@ -18,8 +15,6 @@ interface Props {
   chapterTextLoading: boolean;
 }
 
-const MINI_PLAYER_HEIGHT = 80;
-
 export default function ReadingModeOverlay({
   book,
   currentChapterId,
@@ -29,120 +24,67 @@ export default function ReadingModeOverlay({
   chapterTextLoading,
 }: Props) {
   const { settings, updateSetting, resetSettings, cycleTheme } = useReadingSettings();
-  const player = usePlayer();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [pageIndex, setPageIndex] = useState(0);
-  const [pageHeight, setPageHeight] = useState(0);
-  const [saveToast, setSaveToast] = useState(false);
-  const [showNav, setShowNav] = useState<"left" | "right" | null>(null);
-
-  const headerRef = useRef<HTMLElement>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pageIndexRef = useRef(0);
-  const currentChapterIdRef = useRef(currentChapterId);
-  const touchStartX = useRef(0);
-  const touchStartY = useRef(0);
-
-  // Keep refs in sync
-  useEffect(() => { pageIndexRef.current = pageIndex; }, [pageIndex]);
-  useEffect(() => { currentChapterIdRef.current = currentChapterId; }, [currentChapterId]);
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const [activeParagraphIndex, setActiveParagraphIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastScrollY = useRef(0);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const currentChapter = book.chapters.find((c) => c.id === currentChapterId);
-  const chapterIndex = book.chapters.findIndex((c) => c.id === currentChapterId);
 
-  // Parse paragraphs from text
-  const paragraphs = chapterText
-    ? chapterText.split(/\n\n+/).filter((p) => p.trim().length > 0)
-    : [];
+  const paragraphs = useMemo(
+    () => chapterText ? chapterText.split(/\n\n+/).filter((p) => p.trim().length > 0) : [],
+    [chapterText],
+  );
 
-  // Compute page height from header + mini player
-  const computePageHeight = useCallback(() => {
-    const headerH = headerRef.current?.offsetHeight ?? 52;
-    setPageHeight(window.innerHeight - headerH - MINI_PLAYER_HEIGHT);
+  // Header auto-hide on scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let timeout: ReturnType<typeof setTimeout>;
+    const handler = () => {
+      const delta = el.scrollTop - lastScrollY.current;
+      lastScrollY.current = el.scrollTop;
+      if (delta > 5) {
+        setHeaderVisible(false);
+      } else if (delta < -5) {
+        setHeaderVisible(true);
+      }
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setHeaderVisible(true), 2000);
+    };
+    el.addEventListener("scroll", handler, { passive: true });
+    return () => { el.removeEventListener("scroll", handler); clearTimeout(timeout); };
   }, []);
 
+  // IntersectionObserver for active paragraph tracking
   useEffect(() => {
-    computePageHeight();
-    const observer = new ResizeObserver(computePageHeight);
-    observer.observe(document.documentElement);
-    return () => observer.disconnect();
-  }, [computePageHeight]);
+    if (observerRef.current) observerRef.current.disconnect();
+    const container = scrollRef.current;
+    if (!container || paragraphs.length === 0) return;
 
-  // Recalculate page height when header renders
-  useEffect(() => {
-    if (headerRef.current) computePageHeight();
-  }, [computePageHeight]);
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => {
+            const aRect = a.boundingClientRect;
+            const bRect = b.boundingClientRect;
+            return Math.abs(aRect.top - window.innerHeight / 2) - Math.abs(bRect.top - window.innerHeight / 2);
+          });
+        if (visible[0]) {
+          const idx = Number((visible[0].target as HTMLElement).dataset.paraIndex);
+          if (!isNaN(idx)) setActiveParagraphIndex(idx);
+        }
+      },
+      { root: container, threshold: 0.3 }
+    );
 
-  // Pagination
-  const { pages, pageCount, isCalculating } = usePagination(paragraphs, pageHeight, settings);
-
-  // Reset to page 0 when chapter changes
-  useEffect(() => {
-    setPageIndex(0);
-  }, [currentChapterId]);
-
-  // Navigate to previous page or chapter
-  const navigatePrev = useCallback(() => {
-    if (pageIndex > 0) {
-      setPageIndex((i) => i - 1);
-    } else if (chapterIndex > 0) {
-      onChapterSelect(book.chapters[chapterIndex - 1].id);
-    }
-  }, [pageIndex, chapterIndex, book.chapters, onChapterSelect]);
-
-  // Navigate to next page or chapter
-  const navigateNext = useCallback(() => {
-    if (pageIndex < pageCount - 1) {
-      setPageIndex((i) => i + 1);
-    } else if (chapterIndex < book.chapters.length - 1) {
-      onChapterSelect(book.chapters[chapterIndex + 1].id);
-    }
-  }, [pageIndex, pageCount, chapterIndex, book.chapters, onChapterSelect]);
-
-  // Save reading state
-  const doSave = useCallback(() => {
-    const currentIdx = pageIndexRef.current;
-    const currentPages = pages;
-    const chapterIdx = book.chapters.findIndex((c) => c.id === currentChapterIdRef.current);
-
-    // Find the paragraph_index of the first paragraph on the current page
-    let parasBefore = 0;
-    for (let p = 0; p < currentIdx && p < currentPages.length; p++) {
-      parasBefore += currentPages[p].length;
-    }
-
-    const scrollPos = pageCount > 1 ? currentIdx / (pageCount - 1) : 0;
-    const progress = book.chapters.length > 0
-      ? (chapterIdx + scrollPos) / book.chapters.length
-      : 0;
-
-    saveReadingState(book.id, {
-      current_chapter_id: currentChapterIdRef.current,
-      scroll_position: scrollPos,
-      paragraph_index: parasBefore,
-      reading_progress: Math.min(1, Math.max(0, progress)),
-      audio_position: player.currentTime,
-      voice_id: null,
-    }).then(() => {
-      setSaveToast(true);
-      setTimeout(() => setSaveToast(false), 2000);
-    }).catch(() => {});
-  }, [book, pages, pageCount, player]);
-
-  // Auto-save on page change (debounced 3s)
-  useEffect(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(doSave, 3000);
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [pageIndex, doSave]);
-
-  // Save on unmount
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      doSave();
-    };
-  }, [doSave]);
+    const paras = container.querySelectorAll("[data-para-index]");
+    paras.forEach((el) => observerRef.current!.observe(el));
+    return () => observerRef.current?.disconnect();
+  }, [paragraphs.length, currentChapterId]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -152,6 +94,7 @@ export default function ReadingModeOverlay({
 
       if (e.key === "Escape") { onClose(); return; }
       if (e.key === "T" || e.key === "t") { cycleTheme(); return; }
+      if (e.key === "L" || e.key === "l") { updateSetting("focusLine", !settings.focusLine); return; }
       if (e.key === "+" || e.key === "=") {
         updateSetting("fontSize", Math.min(32, settings.fontSize + 1)); return;
       }
@@ -167,51 +110,30 @@ export default function ReadingModeOverlay({
       if ((e.ctrlKey || e.metaKey) && e.key === "-") {
         e.preventDefault(); updateSetting("fontSize", Math.max(12, settings.fontSize - 2)); return;
       }
-      if (e.key === "ArrowRight" || e.key === "PageDown") {
-        e.preventDefault(); navigateNext(); return;
-      }
-      if (e.key === "ArrowLeft" || e.key === "PageUp") {
-        e.preventDefault(); navigatePrev(); return;
-      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [settings.fontSize, onClose, updateSetting, resetSettings, cycleTheme, navigateNext, navigatePrev]);
+  }, [settings.fontSize, settings.focusLine, onClose, updateSetting, resetSettings, cycleTheme]);
 
-  // Touch swipe handlers
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-    touchStartY.current = e.touches[0].clientY;
-  }, []);
-
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
-    const dx = e.changedTouches[0].clientX - touchStartX.current;
-    const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (Math.abs(dx) > 50 && Math.abs(dy) < 75) {
-      if (dx < 0) navigateNext();
-      else navigatePrev();
-    }
-  }, [navigateNext, navigatePrev]);
-
-  const currentPage = pages[pageIndex] ?? [];
+  const miniPlayerHeight = 80;
 
   return (
     <div
-      className="fixed inset-0 z-40 flex flex-col select-none"
+      className="fixed inset-0 z-40 flex flex-col"
       style={{
         backgroundColor: "var(--reading-bg, #1A1A2E)",
         color: "var(--reading-text, #E8E8E8)",
       }}
+      data-reading-overlay
       role="dialog"
       aria-modal="true"
       aria-label="Olvasási mód"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
     >
       {/* Header */}
       <header
-        ref={headerRef}
-        className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+        className={`flex items-center justify-between px-4 py-3 border-b shrink-0 transition-transform duration-300 ${
+          headerVisible ? "translate-y-0" : "-translate-y-full"
+        }`}
         style={{ borderColor: "color-mix(in srgb, var(--reading-text) 15%, transparent)" }}
       >
         <button
@@ -239,84 +161,50 @@ export default function ReadingModeOverlay({
         </button>
       </header>
 
-      {/* Page area */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Left navigation zone */}
-        <button
-          className="absolute left-0 top-0 h-full w-1/2 z-10 cursor-pointer opacity-0"
-          onClick={navigatePrev}
-          onMouseEnter={() => setShowNav("left")}
-          onMouseLeave={() => setShowNav(null)}
-          aria-label="Előző oldal"
-          tabIndex={-1}
-        />
-        {/* Right navigation zone */}
-        <button
-          className="absolute right-0 top-0 h-full w-1/2 z-10 cursor-pointer opacity-0"
-          onClick={navigateNext}
-          onMouseEnter={() => setShowNav("right")}
-          onMouseLeave={() => setShowNav(null)}
-          aria-label="Következő oldal"
-          tabIndex={-1}
-        />
-
-        {/* Hover navigation arrows */}
-        <div
-          className={`absolute left-3 top-1/2 -translate-y-1/2 z-20 pointer-events-none transition-opacity duration-150 ${
-            showNav === "left" && pageIndex > 0 ? "opacity-40" : "opacity-0"
-          }`}
-        >
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-        </div>
-        <div
-          className={`absolute right-3 top-1/2 -translate-y-1/2 z-20 pointer-events-none transition-opacity duration-150 ${
-            showNav === "right" && pageIndex < pageCount - 1 ? "opacity-40" : "opacity-0"
-          }`}
-        >
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-        </div>
-
-        {/* Page content */}
-        {chapterTextLoading || isCalculating ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="opacity-40 text-sm">
-              {chapterTextLoading ? "Betöltés..." : "Számolás..."}
-            </p>
-          </div>
-        ) : paragraphs.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="opacity-40 text-sm">Nincs szöveg.</p>
-          </div>
-        ) : (
-          pageHeight > 0 && (
-            <PageView
-              paragraphs={currentPage}
-              pageHeight={pageHeight}
-              maxWidth={settings.maxWidth}
-            />
-          )
-        )}
-      </div>
-
-      {/* Page indicator + save toast */}
+      {/* Scrollable text area */}
       <div
-        className="shrink-0 flex items-center justify-center gap-3 py-2"
-        style={{ height: "32px" }}
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto scroll-smooth"
+        style={{ paddingBottom: `${miniPlayerHeight + 24}px` }}
       >
-        {saveToast ? (
-          <span className="text-xs opacity-50">✓ Elmentve</span>
-        ) : pageCount > 0 ? (
-          <span className="text-xs opacity-40 tabular-nums">
-            {pageIndex + 1} / {pageCount}
-          </span>
-        ) : null}
+        <div
+          style={{
+            maxWidth: "var(--reading-max-width, 680px)",
+            fontFamily: "var(--reading-font, Georgia, serif)",
+            fontSize: "var(--reading-size, 18px)",
+            lineHeight: "var(--reading-line-height, 1.7)",
+            wordSpacing: "var(--reading-word-spacing, 0em)",
+            letterSpacing: "var(--reading-letter-spacing, 0em)",
+          }}
+          className="mx-auto px-6 py-8"
+        >
+          {chapterTextLoading && (
+            <p className="opacity-40 text-center py-20">Betöltés...</p>
+          )}
+
+          {!chapterTextLoading && paragraphs.length === 0 && (
+            <p className="opacity-40 text-center py-20">Nincs szöveg.</p>
+          )}
+
+          {paragraphs.map((para, i) => {
+            const isActive = settings.focusLine && i === activeParagraphIndex;
+            const isDimmed = settings.focusLine && i !== activeParagraphIndex;
+            return (
+              <p
+                key={i}
+                data-para-index={i}
+                className={`mb-[1.2em] transition-opacity duration-300 ${
+                  isDimmed ? "opacity-30" : "opacity-100"
+                } ${isActive ? "font-[500]" : ""}`}
+              >
+                {para}
+              </p>
+            );
+          })}
+        </div>
       </div>
 
-      {/* Typography Panel */}
+      {/* Typography Panel (floating) */}
       <TypographyPanel />
 
       {/* Chapter Sidebar */}
