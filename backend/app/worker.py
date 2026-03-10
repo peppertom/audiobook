@@ -3,6 +3,7 @@ import asyncio
 import functools
 import json
 import logging
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from app.config import settings, BACKEND_ROOT
 from app.models import Job, Chapter, Voice
 from app.database import Base
+from app.services import storage
 from app.services.tts_engine import TTSEngine
 
 logging.basicConfig(
@@ -40,6 +42,10 @@ async def generate_tts(ctx, job_id: int):
         await db.commit()
         logger.info(f"Job {job_id}: Started processing")
 
+        ref_clip_is_temp = False
+        ref_clip = None
+        output_path = None
+
         try:
             # Load chapter and voice
             ch_result = await db.execute(select(Chapter).where(Chapter.id == job.chapter_id))
@@ -50,16 +56,29 @@ async def generate_tts(ctx, job_id: int):
             if not voice.reference_clip_path:
                 raise ValueError("Voice has no reference clip")
 
-            # Resolve reference clip path (may be relative to BACKEND_ROOT)
-            ref_clip = Path(voice.reference_clip_path)
-            if not ref_clip.is_absolute():
-                ref_clip = BACKEND_ROOT / ref_clip
+            # Resolve reference clip: download from R2 or use local path
+            if storage.is_remote():
+                ref_clip = storage.download_temp(voice.reference_clip_path)
+                ref_clip_is_temp = True
+            else:
+                ref_clip = Path(voice.reference_clip_path)
+                if not ref_clip.is_absolute():
+                    ref_clip = BACKEND_ROOT / ref_clip
+
             if not ref_clip.exists():
                 raise ValueError(f"Reference clip not found: {ref_clip}")
 
             job.error_message = f"Generating audio for chapter: {chapter.title[:50]}..."
             await db.commit()
             logger.info(f"Job {job_id}: Generating TTS for chapter '{chapter.title}' ({chapter.word_count} words)")
+
+            # Output path: temp file in R2 mode, final path in local mode
+            if storage.is_remote():
+                tmp_f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                tmp_f.close()
+                output_path = Path(tmp_f.name)
+            else:
+                output_path = settings.audio_path / f"ch{chapter.id}_v{voice.id}.wav"
 
             # Progress callback — updates DB with JSON so frontend can poll.
             # Called from a worker thread (since tts.generate is blocking),
@@ -118,7 +137,6 @@ async def generate_tts(ctx, job_id: int):
 
             # Run blocking TTS generation in a thread so the event loop stays free
             # for processing progress update coroutines
-            output_path = settings.audio_path / f"ch{chapter.id}_v{voice.id}.wav"
             _, timing_data = await loop.run_in_executor(
                 None,
                 functools.partial(
@@ -131,18 +149,25 @@ async def generate_tts(ctx, job_id: int):
                 ),
             )
 
-            # Store relative path for URL serving
-            try:
-                relative_output = str(output_path.relative_to(BACKEND_ROOT))
-            except ValueError:
-                relative_output = str(output_path)
+            # Store audio: upload to R2 or keep local path
+            if storage.is_remote():
+                r2_key = f"audio/ch{chapter.id}_v{voice.id}.wav"
+                storage.upload(output_path, r2_key)
+                audio_url = storage.public_url(r2_key)
+                output_path.unlink(missing_ok=True)
+                output_path = None
+            else:
+                try:
+                    audio_url = str(output_path.relative_to(BACKEND_ROOT))
+                except ValueError:
+                    audio_url = str(output_path)
 
             # Total duration from timing data
             total_duration = timing_data[-1]["end"] if timing_data else None
 
             # Update job
             job.status = "done"
-            job.audio_output_path = relative_output
+            job.audio_output_path = audio_url
             job.duration_seconds = total_duration
             job.timing_data = json.dumps(timing_data, ensure_ascii=False)
             job.error_message = None  # Clear any previous error messages
@@ -159,12 +184,20 @@ async def generate_tts(ctx, job_id: int):
             logger.error(f"Job {job_id}: Failed with error: {e}")
             raise
 
+        finally:
+            # Cleanup temp files
+            if ref_clip_is_temp and ref_clip and ref_clip.exists():
+                ref_clip.unlink(missing_ok=True)
+            if output_path and output_path.exists() and storage.is_remote():
+                output_path.unlink(missing_ok=True)
+
 
 async def startup(ctx):
     """Worker startup — load TTS model and DB engine."""
-    # Ensure storage directories exist
-    for path in [settings.storage_path, settings.audio_path, settings.voices_path]:
-        path.mkdir(parents=True, exist_ok=True)
+    # Local dev only: ensure storage directories exist
+    if not storage.is_remote():
+        for path in [settings.storage_path, settings.audio_path, settings.voices_path]:
+            path.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Loading TTS model (device will be auto-detected)...")
     tts = TTSEngine()

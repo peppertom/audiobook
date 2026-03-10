@@ -26,7 +26,12 @@ from TTS.api import TTS
 class TTSEngine:
     def __init__(self):
         self.model = None
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
 
     def load_model(self):
         """Load XTTS-v2 model into memory."""

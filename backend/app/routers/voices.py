@@ -1,6 +1,7 @@
 import logging
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select
@@ -9,6 +10,7 @@ from app.database import get_db
 from app.config import settings, BACKEND_ROOT
 from app.models import Voice
 from app.schemas import VoiceCreate, VoiceOut
+from app.services import storage
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,6 @@ def to_relative_path(abs_path: Path) -> str:
     try:
         return str(abs_path.relative_to(BACKEND_ROOT))
     except ValueError:
-        # Fallback: just use storage/... format
         return str(abs_path)
 
 router = APIRouter(prefix="/api/voices", tags=["voices"])
@@ -85,23 +86,32 @@ async def upload_reference_clip(
     if ext not in ALLOWED_AUDIO_EXTENSIONS:
         raise HTTPException(400, f"Unsupported format. Allowed: {', '.join(ALLOWED_AUDIO_EXTENSIONS)}")
 
-    # Ensure voices directory exists
-    settings.voices_path.mkdir(parents=True, exist_ok=True)
+    # Save upload and convert to WAV using temp files
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as upload_tmp:
+        shutil.copyfileobj(file.file, upload_tmp)
+        upload_path = Path(upload_tmp.name)
 
-    # Save uploaded file with original extension
-    upload_path = settings.voices_path / f"voice_{voice_id}_upload{ext}"
-    with open(upload_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_tmp:
+        clip_path = Path(wav_tmp.name)
 
-    # Convert to WAV if needed (XTTS-v2 requires 22050Hz mono WAV)
-    clip_path = settings.voices_path / f"voice_{voice_id}_ref.wav"
-    if ext == ".wav":
-        # Still normalize to 22050Hz mono
-        convert_to_wav(upload_path, clip_path)
-    else:
+    try:
         convert_to_wav(upload_path, clip_path)
 
-    voice.reference_clip_path = to_relative_path(clip_path)
+        if storage.is_remote():
+            r2_key = f"voices/voice_{voice_id}_ref.wav"
+            storage.upload(clip_path, r2_key)
+            voice.reference_clip_path = r2_key
+        else:
+            # Move to permanent local location
+            settings.voices_path.mkdir(parents=True, exist_ok=True)
+            final_path = settings.voices_path / f"voice_{voice_id}_ref.wav"
+            clip_path.rename(final_path)
+            clip_path = final_path
+            voice.reference_clip_path = to_relative_path(clip_path)
+    finally:
+        if clip_path.exists() and storage.is_remote():
+            clip_path.unlink(missing_ok=True)
+
     await db.commit()
     await db.refresh(voice)
     return voice

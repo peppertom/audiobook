@@ -1,0 +1,21 @@
+# RunPod GPU worker image for XTTS-v2 TTS generation
+# Based on RunPod's PyTorch base with CUDA 12.4 pre-installed
+FROM runpod/pytorch:2.4.0-py3.12-cuda12.4.1-devel-ubuntu22.04
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
+# Install worker dependencies (PyTorch already present in base image)
+COPY requirements.txt requirements-worker.txt ./
+RUN pip install --no-cache-dir -r requirements-worker.txt \
+    --extra-index-url https://download.pytorch.org/whl/cu124
+
+COPY . .
+
+# Pre-download XTTS-v2 model into the image (~2GB) to avoid cold-start delays.
+# The model is cached in ~/.local/share/tts/ by Coqui TTS.
+ENV COQUI_TOS_AGREED=1
+RUN python -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"
+
+CMD ["python", "-m", "arq", "app.worker.WorkerSettings"]

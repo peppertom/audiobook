@@ -1,4 +1,5 @@
 import shutil
+import tempfile
 from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy import select
@@ -10,6 +11,7 @@ from app.models import Book, Chapter, User
 from app.schemas import BookOut, BookDetailOut, CostEstimateResponse
 from app.services.epub_parser import parse_epub
 from app.services.credits import calculate_credits_needed, get_balance, WORDS_PER_CREDIT
+from app.services import storage
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/api/books", tags=["books"])
@@ -20,13 +22,21 @@ async def upload_book(file: UploadFile = File(...), db: AsyncSession = Depends(g
     if not file.filename or not file.filename.endswith(".epub"):
         raise HTTPException(400, "Only EPUB files are supported")
 
-    # Save uploaded file
-    file_path = settings.books_path / file.filename
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    # Parse EPUB
-    parsed = parse_epub(file_path)
+    if storage.is_remote():
+        # Save to temp file, parse, then upload to R2
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+            shutil.copyfileobj(file.file, tmp)
+            tmp_path = Path(tmp.name)
+        try:
+            parsed = parse_epub(tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    else:
+        # Save uploaded file to local storage
+        file_path = settings.books_path / file.filename
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        parsed = parse_epub(file_path)
 
     # Create book record
     book = Book(
@@ -118,9 +128,10 @@ async def delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
     book = result.scalar_one_or_none()
     if not book:
         raise HTTPException(404, "Book not found")
-    # Delete stored file
-    file_path = settings.books_path / book.original_filename
-    if file_path.exists():
-        file_path.unlink()
+    if not storage.is_remote():
+        # Delete local file
+        file_path = settings.books_path / book.original_filename
+        if file_path.exists():
+            file_path.unlink()
     await db.delete(book)
     await db.commit()
