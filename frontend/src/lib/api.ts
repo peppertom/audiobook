@@ -21,11 +21,24 @@ function authHeadersMultipart(): HeadersInit {
   return headers;
 }
 
+function handleUnauthorized() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("audiobook_token");
+    localStorage.removeItem("audiobook_user");
+    document.cookie = "audiobook_session=; path=/; max-age=0";
+    window.location.href = "/auth/signin";
+  }
+}
+
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: authHeaders(options?.headers as Record<string, string>),
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new Error("Unauthorized");
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail || `API error: ${res.status} ${res.statusText}`);
@@ -34,10 +47,14 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 async function fetchWithAuth(url: string, options?: RequestInit): Promise<Response> {
-  return fetch(url, {
+  const res = await fetch(url, {
     ...options,
     headers: { ...authHeadersMultipart(), ...options?.headers },
   });
+  if (res.status === 401) {
+    handleUnauthorized();
+  }
+  return res;
 }
 
 // Books
@@ -86,6 +103,12 @@ export const generateBook = (bookId: number, voiceId: number, chapterVoices?: Re
     method: "POST",
     body: JSON.stringify({ voice_id: voiceId, chapter_voices: chapterVoices || {} }),
   });
+export const startNextJob = () => fetchApi<Job>("/api/jobs/start-next", { method: "POST" });
+export const startAllJobs = () => fetchApi<Job[]>("/api/jobs/start-all", { method: "POST" });
+export const startJob = (jobId: number) => fetchApi<Job>(`/api/jobs/${jobId}/start`, { method: "POST" });
+export const cancelJob = (jobId: number) =>
+  fetchWithAuth(`${API_BASE}/api/jobs/${jobId}`, { method: "DELETE" });
+export const retryFailedJobs = () => fetchApi<Job[]>("/api/jobs/retry-failed", { method: "POST" });
 
 // Playback
 export const getPlaybackState = (bookId: number, voiceId: number) =>

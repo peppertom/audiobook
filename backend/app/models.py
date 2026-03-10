@@ -21,6 +21,9 @@ class User(Base):
     settings: Mapped["UserSettings"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     credit_balance: Mapped["CreditBalance"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
     credit_transactions: Mapped[list["CreditTransaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    books: Mapped[list["Book"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+    voices: Mapped[list["Voice"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+    jobs: Mapped[list["Job"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
 
 
 class UserSettings(Base):
@@ -70,9 +73,10 @@ class Book(Base):
     language: Mapped[str] = mapped_column(String(10), default="hu")
     original_filename: Mapped[str] = mapped_column(String(500))
     chapter_count: Mapped[int] = mapped_column(Integer, default=0)
-    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     chapters: Mapped[list["Chapter"]] = relationship(back_populates="book", cascade="all, delete-orphan")
+    owner: Mapped["User"] = relationship(back_populates="books")
 
 
 class Chapter(Base):
@@ -95,9 +99,10 @@ class Voice(Base):
     sample_audio_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     reference_clip_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="upload")  # youtube|upload|preset
-    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    owner: Mapped["User"] = relationship(back_populates="voices")
 
 
 class Job(Base):
@@ -110,11 +115,12 @@ class Job(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     timing_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: [{start, end, text}, ...]
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     chapter: Mapped["Chapter"] = relationship()
     voice: Mapped["Voice"] = relationship()
+    owner: Mapped["User"] = relationship(back_populates="jobs")
 
 
 class PlaybackState(Base):
@@ -124,5 +130,5 @@ class PlaybackState(Base):
     voice_id: Mapped[int] = mapped_column(ForeignKey("voices.id", ondelete="CASCADE"))
     current_chapter_id: Mapped[int] = mapped_column(ForeignKey("chapters.id"))
     position_seconds: Mapped[float] = mapped_column(Float, default=0.0)
-    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

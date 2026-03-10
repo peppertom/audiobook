@@ -48,11 +48,14 @@ function getStoredUser(): AuthUser | null {
 function storeAuth(token: string, user: AuthUser) {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(USER_KEY, JSON.stringify(user));
+  // Non-HttpOnly cookie for Next.js middleware route protection
+  document.cookie = "audiobook_session=1; path=/; max-age=86400; SameSite=Lax";
 }
 
 function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  document.cookie = "audiobook_session=; path=/; max-age=0";
 }
 
 // --- Provider ---

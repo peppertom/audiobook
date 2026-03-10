@@ -1,8 +1,6 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { getJobs, Job } from "@/lib/api";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
+import { getJobs, startNextJob, startAllJobs, startJob as apiStartJob, cancelJob as apiCancelJob, retryFailedJobs, Job } from "@/lib/api";
 
 const STATUS_LABELS: Record<string, string> = {
   queued: "Queued",
@@ -60,9 +58,12 @@ function JobRow({
   const isFailed = job.status === "failed";
   const isProcessing = job.status === "processing";
   const isQueued = job.status === "queued";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9000";
   const audioUrl =
     isDone && job.audio_output_path
-      ? `${API_BASE}/${job.audio_output_path}`
+      ? job.audio_output_path.startsWith("http")
+        ? job.audio_output_path
+        : `${API_BASE}/${job.audio_output_path}`
       : null;
 
   const togglePlay = () => {
@@ -289,7 +290,7 @@ export default function QueuePage() {
   const startNext = async () => {
     setStarting(true);
     try {
-      await fetch(`${API_BASE}/api/jobs/start-next`, { method: "POST" });
+      await startNextJob();
       await refresh();
     } catch {
       alert("Failed to start job. Is the worker running?");
@@ -301,7 +302,7 @@ export default function QueuePage() {
   const startAll = async () => {
     setStarting(true);
     try {
-      await fetch(`${API_BASE}/api/jobs/start-all`, { method: "POST" });
+      await startAllJobs();
       await refresh();
     } catch {
       alert("Failed to start jobs. Is the worker running?");
@@ -313,7 +314,7 @@ export default function QueuePage() {
   const retryFailed = async () => {
     setRetrying(true);
     try {
-      await fetch(`${API_BASE}/api/jobs/retry-failed`, { method: "POST" });
+      await retryFailedJobs();
       await refresh();
     } catch {
       alert("Failed to retry jobs");
@@ -324,7 +325,7 @@ export default function QueuePage() {
 
   const cancelJob = async (id: number) => {
     try {
-      await fetch(`${API_BASE}/api/jobs/${id}`, { method: "DELETE" });
+      await apiCancelJob(id);
       setJobs((prev) => prev.filter((j) => j.id !== id));
     } catch {
       alert("Failed to cancel job");
@@ -333,17 +334,10 @@ export default function QueuePage() {
 
   const startJob = async (id: number) => {
     try {
-      const res = await fetch(`${API_BASE}/api/jobs/${id}/start`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.detail || "Failed to start job");
-        return;
-      }
+      await apiStartJob(id);
       await refresh();
-    } catch {
-      alert("Failed to start job. Is the worker running?");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to start job. Is the worker running?");
     }
   };
 
