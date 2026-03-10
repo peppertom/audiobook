@@ -110,6 +110,16 @@ export const cancelJob = (jobId: number) =>
   fetchWithAuth(`${API_BASE}/api/jobs/${jobId}`, { method: "DELETE" });
 export const retryFailedJobs = () => fetchApi<Job[]>("/api/jobs/retry-failed", { method: "POST" });
 
+// Notifications
+export const getNotifications = () => fetchApi<Notification[]>("/api/notifications/");
+export const getUnreadCount = () => fetchApi<{ count: number }>("/api/notifications/unread-count");
+export const markNotificationRead = (id: number) =>
+  fetchApi<Notification>(`/api/notifications/${id}/read`, { method: "POST" });
+export const markAllNotificationsRead = () =>
+  fetchApi<{ ok: boolean }>("/api/notifications/read-all", { method: "POST" });
+export const deleteNotification = (id: number) =>
+  fetchWithAuth(`${API_BASE}/api/notifications/${id}`, { method: "DELETE" });
+
 // Playback
 export const getPlaybackState = (bookId: number, voiceId: number) =>
   fetchApi<PlaybackState>(`/api/playback/?book_id=${bookId}&voice_id=${voiceId}`);
@@ -182,4 +192,8 @@ export interface CreditTransaction {
 export interface CostEstimate {
   total_words: number; credits_required: number;
   estimated_cost_usd: number; current_balance: number; sufficient_credits: boolean;
+}
+export interface Notification {
+  id: number; type: string; title: string; body: string;
+  is_read: boolean; job_id: number | null; created_at: string;
 }

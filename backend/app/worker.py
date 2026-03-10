@@ -10,11 +10,13 @@ from pathlib import Path
 from arq.connections import RedisSettings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import selectinload
 from app.config import settings, BACKEND_ROOT
-from app.models import Job, Chapter, Voice
+from app.models import Job, Chapter, Voice, Book, User
 from app.database import Base
 from app.services import storage
 from app.services.tts_engine import TTSEngine
+from app.services.notifications import notify_job_done, notify_job_failed
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,6 +47,7 @@ async def generate_tts(ctx, job_id: int):
         ref_clip_is_temp = False
         ref_clip = None
         output_path = None
+        chapter = None
 
         try:
             # Load chapter and voice
@@ -175,13 +178,58 @@ async def generate_tts(ctx, job_id: int):
             await db.commit()
             logger.info(f"Job {job_id}: Completed successfully ({len(timing_data)} chunks, {total_duration:.1f}s)")
 
+            # Notify user
+            try:
+                user_result = await db.execute(
+                    select(User).options(selectinload(User.settings)).where(User.id == job.user_id)
+                )
+                user = user_result.scalar_one()
+                book_result = await db.execute(select(Book).where(Book.id == chapter.book_id))
+                book = book_result.scalar_one_or_none()
+                await notify_job_done(
+                    db=db,
+                    job_id=job.id,
+                    user_id=user.id,
+                    user_email=user.email,
+                    email_notifications=user.settings.email_notifications if user.settings else True,
+                    chapter_title=chapter.title,
+                    chapter_number=chapter.chapter_number,
+                    book_title=book.title if book else "",
+                )
+            except Exception as notif_err:
+                logger.error(f"Job {job_id}: Failed to send done notification: {notif_err}")
+
         except BaseException as e:
             # BaseException catches CancelledError (arq timeout) + all Exceptions
+            error_msg = "Timeout — TTS took too long" if isinstance(e, (asyncio.CancelledError, TimeoutError)) else str(e)
             job.status = "failed"
-            job.error_message = f"Timeout — TTS took too long" if isinstance(e, (asyncio.CancelledError, TimeoutError)) else str(e)
+            job.error_message = error_msg
             job.completed_at = datetime.utcnow()
             await db.commit()
             logger.error(f"Job {job_id}: Failed with error: {e}")
+
+            # Notify user (only if chapter was loaded — skip if error was before that)
+            if chapter:
+                try:
+                    user_result = await db.execute(
+                        select(User).options(selectinload(User.settings)).where(User.id == job.user_id)
+                    )
+                    user = user_result.scalar_one()
+                    book_result = await db.execute(select(Book).where(Book.id == chapter.book_id))
+                    book = book_result.scalar_one_or_none()
+                    await notify_job_failed(
+                        db=db,
+                        job_id=job.id,
+                        user_id=user.id,
+                        user_email=user.email,
+                        email_notifications=user.settings.email_notifications if user.settings else True,
+                        chapter_title=chapter.title,
+                        chapter_number=chapter.chapter_number,
+                        book_title=book.title if book else "",
+                        error=error_msg,
+                    )
+                except Exception as notif_err:
+                    logger.error(f"Job {job_id}: Failed to send failed notification: {notif_err}")
             raise
 
         finally:

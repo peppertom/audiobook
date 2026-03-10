@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { LogOut, User, CreditCard } from "lucide-react";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useState, useRef, useEffect } from "react";
 
 export function Navbar() {
@@ -37,7 +38,9 @@ export function Navbar() {
           Queue
         </Link>
 
-        <div className="ml-auto relative" ref={menuRef}>
+        {user && <NotificationBell />}
+
+        <div className="relative" ref={menuRef}>
           {isLoading ? (
             <div className="w-8 h-8 rounded-full bg-gray-800 animate-pulse" />
           ) : user ? (

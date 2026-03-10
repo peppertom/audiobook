@@ -24,6 +24,7 @@ class User(Base):
     books: Mapped[list["Book"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     voices: Mapped[list["Voice"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     jobs: Mapped[list["Job"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+    notifications: Mapped[list["Notification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class UserSettings(Base):
@@ -121,6 +122,19 @@ class Job(Base):
     chapter: Mapped["Chapter"] = relationship()
     voice: Mapped["Voice"] = relationship()
     owner: Mapped["User"] = relationship(back_populates="jobs")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(String(50))  # job_done | job_failed
+    title: Mapped[str] = mapped_column(String(500))
+    body: Mapped[str] = mapped_column(String(2000))
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    user: Mapped["User"] = relationship(back_populates="notifications")
 
 
 class PlaybackState(Base):

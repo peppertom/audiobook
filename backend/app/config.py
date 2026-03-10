@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     free_signup_credits: int = 3
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
     ollama_base_url: str = "http://localhost:11434"
+    resend_api_key: str | None = None
+    email_from: str = "noreply@audiobook.app"
 
     model_config = {"env_prefix": "AUDIOBOOK_"}
 
