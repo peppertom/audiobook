@@ -191,6 +191,21 @@ async def generate_tts(ctx, job_id: int):
             if output_path and output_path.exists() and storage.is_remote():
                 output_path.unlink(missing_ok=True)
 
+            # Fair scheduling: auto-enqueue next queued job for this user.
+            # Each user has at most 1 job in ARQ at a time → users interleave.
+            try:
+                next_result = await db.execute(
+                    select(Job)
+                    .where(Job.user_id == job.user_id, Job.status == "queued")
+                    .order_by(Job.created_at.asc())
+                )
+                next_job = next_result.scalars().first()
+                if next_job:
+                    await ctx["redis"].enqueue_job("generate_tts", next_job.id)
+                    logger.info(f"Job {job_id}: Auto-enqueued next job {next_job.id} for user {job.user_id}")
+            except Exception as auto_err:
+                logger.error(f"Job {job_id}: Failed to auto-enqueue next job: {auto_err}")
+
 
 async def startup(ctx):
     """Worker startup — load TTS model and DB engine."""

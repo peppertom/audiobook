@@ -196,9 +196,10 @@ async def start_all_jobs(
 
     try:
         pool = await get_arq_pool()
-        for job in queued_jobs:
-            await pool.enqueue_job("generate_tts", job.id)
-        logger.info(f"Started {len(queued_jobs)} queued jobs for user {user.id}")
+        # Only enqueue the first job — the worker auto-advances to the next
+        # after each completes, ensuring fair scheduling across users.
+        await pool.enqueue_job("generate_tts", queued_jobs[0].id)
+        logger.info(f"Enqueued first of {len(queued_jobs)} queued jobs for user {user.id} (worker will auto-advance)")
     except Exception as e:
         raise HTTPException(503, f"Failed to enqueue jobs: {e}. Is the worker running?")
 
