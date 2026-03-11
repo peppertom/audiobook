@@ -302,11 +302,11 @@ Fontos elv: a core API **nem futtat közvetlen GPU inferenciát**, csak orchestr
 
 Az alábbi döntésekkel számol a végrehajtási terv:
 
-1. **App platform**: Railway (EU régió).
-2. **Object storage**: Cloudflare R2.
-3. **Inference**: RunPod (TTS és summary külön endpoint).
-4. **Frontend**: Vercel (publikus web), backend Railway-n.
-5. **Auth policy**: regisztráció engedett, de **admin jóváhagyás szükséges** a belépéshez (zárt béta mód).
+- [x] **App platform**: Railway (EU régió).
+- [x] **Object storage**: Cloudflare R2.
+- [x] **Inference**: RunPod (TTS és summary külön endpoint).
+- [x] **Frontend**: Vercel (publikus web), backend Railway-n.
+- [x] **Auth policy**: regisztráció engedett, de **admin jóváhagyás szükséges** a belépéshez (zárt béta mód).
 
 > Megjegyzés: ha a régió vagy vendor változik, a checklist lépései nagyrészt megtarthatók, csak a provider-specifikus részeket kell cserélni.
 
@@ -316,7 +316,7 @@ Az alábbi döntésekkel számol a végrehajtási terv:
 
 Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használható, admin approval workflow-val.
 
-### 9.1 Fiókok, szervezetek, hozzáférések (manuális)
+### 9.1 Fiókok, szervezetek, hozzáférések (manuális) [ ]
 
 1. **Railway account + project létrehozása**
    - Menj: https://railway.app
@@ -338,7 +338,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
    - Menj: https://sentry.io
    - Frontend + backend project létrehozása.
 
-### 9.2 Domain és DNS (manuális)
+### 9.2 Domain és DNS (manuális) [ ]
 
 1. Vásárolj / használd meglévő domaint (pl. `audiobookapp.hu`).
 2. Állíts be subdomain-eket:
@@ -347,7 +347,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
    - `admin.<domain>` opcionális admin felülethez.
 3. DNS rekordok beállítása Cloudflare-ben a provider instrukciói alapján.
 
-### 9.3 Repository és környezetek előkészítése
+### 9.3 Repository és környezetek előkészítése [ ]
 
 1. Branch-ek és környezetek:
    - `main` → production,
@@ -357,7 +357,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
    - kötelező CI check.
 3. Hozz létre env fájl sablont (`.env.example`) minden szükséges változóval.
 
-### 9.4 Railway production stack létrehozása
+### 9.4 Railway production stack létrehozása [ ]
 
 1. Railway projektben hozd létre service-ket:
    - `backend-api`,
@@ -374,7 +374,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
 4. Állítsd be a worker környezeti változókat ugyanígy.
 5. Healthcheck endpoint ellenőrzése (`/health/live`, `/health/ready`).
 
-### 9.5 Cloudflare R2 bekötés
+### 9.5 Cloudflare R2 bekötés [ ]
 
 1. Hozz létre bucketeket:
    - `audiobook-prod-books`,
@@ -387,7 +387,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
 4. CORS szabályok bucket szinten (frontend domainre korlátozva).
 5. Tesztelj egy upload + presigned URL letöltést.
 
-### 9.6 Inference gateway + OpenAPI contract
+### 9.6 Inference gateway + OpenAPI contract [ ]
 
 1. Hozz létre külön service/repo-t: `inference-gateway`.
 2. Definiáld az OpenAPI contractot:
@@ -402,7 +402,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
    - provider hibaarány,
    - timeout metric.
 
-### 9.7 RunPod TTS és summary endpointok
+### 9.7 RunPod TTS és summary endpointok [ ]
 
 1. Buildeld és pushold a TTS inference image-et.
 2. RunPodon hozz létre TTS endpointot:
@@ -413,39 +413,39 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
 5. Állíts be timeout/circuit breaker policy-t a gatewayben.
 6. Végezz smoke tesztet mindkét endpointon.
 
-### 9.8 Queue + state machine standardizálás
+### 9.8 Queue + state machine standardizálás [ ]
 
 1. Definiáld a job státuszokat: `pending` → `running` → `post_processing` → `done|failed`.
 2. Retry policy + max retry + DLQ stratégia.
 3. Idempotencia kulcs minden jobhoz.
 4. Audit mezők: started_at, completed_at, error_code.
 
-### 9.9 Admin approval workflow (új kötelező funkció)
+### 9.9 Admin approval workflow (új kötelező funkció) [ ]
 
-1. **Adatmodell módosítás**
+1. [x] **Adatmodell módosítás**
    - `users` táblába mezők:
      - `is_admin` (bool, default false),
      - `is_approved` (bool, default false),
      - `approved_at` (datetime, nullable),
      - `approved_by_user_id` (nullable FK users).
-2. **Regisztrációs flow**
+2. [x] **Regisztrációs flow**
    - új user létrejön `is_approved=false` állapotban.
    - login endpoint adjon egyértelmű hibát: "jóváhagyásra vár".
-3. **Admin API endpointok**
+3. [x] **Admin API endpointok**
    - `GET /api/admin/pending-users`
    - `POST /api/admin/users/{id}/approve`
    - `POST /api/admin/users/{id}/reject`
-4. **Seed admin user (manuális lépés)**
+4. [x] **Seed admin user (manuális lépés)**
    - production DB-ben hozz létre első admin fiókot scriptből.
    - script futtatása csak egyszer, auditáltan.
-5. **Admin UI (minimális)**
+5. [ ] **Admin UI (minimális)**
    - pending userek listája,
    - approve/reject gomb.
-6. **Értesítés (opcionális v1.1)**
+6. [ ] **Értesítés (opcionális v1.1)**
    - email adminnak új regisztrációnál,
    - email usernek jóváhagyáskor.
 
-### 9.10 Frontend publikus deploy (Vercel)
+### 9.10 Frontend publikus deploy (Vercel) [ ]
 
 1. Importáld a repót Vercelbe.
 2. Production env vars:
@@ -457,7 +457,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
    - login működik jóváhagyott userrel,
    - jóváhagyatlan user belépése blokkolva.
 
-### 9.11 Observability minimum csomag
+### 9.11 Observability minimum csomag [ ]
 
 1. Backend és worker strukturált JSON log.
 2. Alap metrikák:
@@ -471,14 +471,14 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
    - queue torlódás,
    - RunPod endpoint timeout spike.
 
-### 9.12 PWA alapok (feature flag mögött)
+### 9.12 PWA alapok (feature flag mögött) [ ]
 
 1. PWA manifest bevezetése.
 2. Service worker app shell cache-hez.
 3. Offline jelzés UI-ban.
 4. Audio letöltés csak explicit user akcióval.
 
-### 9.13 Terhelés- és költségteszt
+### 9.13 Terhelés- és költségteszt [ ]
 
 1. Szcenáriók: 100 / 500 / 1000 napi job.
 2. Mérendő:
@@ -496,15 +496,15 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
 
 Go-live előtt minden pont legyen kipipálva:
 
-1. `https://app.<domain>` publikus interneten betölt.
-2. `https://api.<domain>/health/live` és `/health/ready` zöld.
-3. Új user regisztrálható, de login blokkolt jóváhagyásig.
-4. Admin user be tud lépni és jóvá tud hagyni pending usert.
-5. Jóváhagyás után user login sikeres.
-6. Könyvfeltöltés → feldolgozás → audio lejátszás működik R2 tárolással.
-7. Alap riasztások élnek és tesztelve vannak.
-8. Backup/restore próba legalább egyszer lefutott.
-9. Incident runbook és on-call kontakt dokumentálva.
-10. Költség dashboard elérhető (heti review ritual rögzítve).
+- [ ] `https://app.<domain>` publikus interneten betölt.
+- [ ] `https://api.<domain>/health/live` és `/health/ready` zöld.
+- [ ] Új user regisztrálható, de login blokkolt jóváhagyásig.
+- [ ] Admin user be tud lépni és jóvá tud hagyni pending usert.
+- [ ] Jóváhagyás után user login sikeres.
+- [ ] Könyvfeltöltés → feldolgozás → audio lejátszás működik R2 tárolással.
+- [ ] Alap riasztások élnek és tesztelve vannak.
+- [ ] Backup/restore próba legalább egyszer lefutott.
+- [ ] Incident runbook és on-call kontakt dokumentálva.
+- [ ] Költség dashboard elérhető (heti review ritual rögzítve).
 
 Ez a checklist olyan minimális production szintet céloz, ahol a rendszer publikus URL-en működik, de kontrollált (admin approval alapú) hozzáféréssel.
