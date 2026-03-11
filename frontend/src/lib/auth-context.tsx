@@ -11,6 +11,10 @@ export interface AuthUser {
   name: string | null;
   avatar_url: string | null;
   locale: string;
+  is_admin: boolean;
+  is_approved: boolean;
+  approved_at: string | null;
+  approved_by_user_id: string | null;
   created_at: string;
 }
 
