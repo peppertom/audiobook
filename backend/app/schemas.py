@@ -27,6 +27,10 @@ class UserResponse(BaseModel):
     name: str | None
     avatar_url: str | None
     locale: str
+    is_admin: bool = False
+    is_approved: bool = False
+    approved_at: datetime | None = None
+    approved_by_user_id: str | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
