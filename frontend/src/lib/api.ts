@@ -158,6 +158,22 @@ export const getCreditBalance = () => fetchApi<CreditBalance>("/api/users/me/cre
 export const getCreditHistory = (limit = 50, offset = 0) =>
   fetchApi<CreditTransaction[]>(`/api/users/me/credits/history?limit=${limit}&offset=${offset}`);
 
+
+// Admin
+export const getPendingUsers = () => fetchApi<UserProfile[]>("/api/admin/pending-users");
+export const approveUser = (userId: string) =>
+  fetchApi<UserProfile>(`/api/admin/users/${userId}/approve`, { method: "POST" });
+export const rejectUser = async (userId: string) => {
+  const res = await fetch(`${API_BASE}/api/admin/users/${userId}/reject`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  if (!res.ok && res.status !== 204) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `API error: ${res.status} ${res.statusText}`);
+  }
+};
+
 // Types
 export interface Book {
   id: number; title: string; author: string; language: string;
@@ -211,7 +227,10 @@ export interface ReadingStateUpdate {
 }
 export interface UserProfile {
   id: string; email: string; name: string | null;
-  avatar_url: string | null; locale: string; created_at: string;
+  avatar_url: string | null; locale: string;
+  is_admin: boolean; is_approved: boolean;
+  approved_at: string | null; approved_by_user_id: string | null;
+  created_at: string;
 }
 export interface UserSettings {
   playback_speed: number; audio_quality: string;
