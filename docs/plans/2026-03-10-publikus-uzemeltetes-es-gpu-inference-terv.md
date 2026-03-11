@@ -438,7 +438,7 @@ Az alábbi lista végén a rendszer egy publikus URL-en elérhető és használh
 4. [x] **Seed admin user (manuális lépés)**
    - production DB-ben hozz létre első admin fiókot scriptből.
    - script futtatása csak egyszer, auditáltan.
-5. [ ] **Admin UI (minimális)**
+5. [x] **Admin UI (minimális)**
    - pending userek listája,
    - approve/reject gomb.
 6. [ ] **Értesítés (opcionális v1.1)**

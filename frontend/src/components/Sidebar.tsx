@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Library, Mic, ListOrdered, User, Settings, Gem,
+  Library, Mic, ListOrdered, User, Settings, Gem, Shield,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 const NAV_ITEMS = [
   { href: "/", label: "Library", icon: Library },
@@ -19,6 +20,7 @@ const USER_ITEMS = [
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
+  const { user } = useAuth();
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -79,6 +81,17 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
               {item.label}
             </Link>
           ))}
+
+          {user?.is_admin && (
+            <Link
+              href="/admin"
+              className={linkClass("/admin")}
+              onClick={onClose}
+            >
+              <Shield size={18} />
+              Admin
+            </Link>
+          )}
 
           <div className="border-t border-gray-800 my-3" />
 
