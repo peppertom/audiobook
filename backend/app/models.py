@@ -15,6 +15,10 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     locale: Mapped[str] = mapped_column(String(5), default="en")
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    approved_by_user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 

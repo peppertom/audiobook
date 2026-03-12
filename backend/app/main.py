@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.database import init_db
 from app.config import settings
-from app.routers import books, voices, jobs, playback, users, auth_routes, reading
+from app.routers import books, voices, jobs, playback, users, auth_routes, reading, admin
 
 # Ensure storage directories exist before StaticFiles mount
 for path in [settings.storage_path, settings.books_path, settings.audio_path, settings.voices_path]:
@@ -37,6 +37,7 @@ app.include_router(playback.router)
 app.include_router(users.router)
 app.include_router(auth_routes.router)
 app.include_router(reading.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")
