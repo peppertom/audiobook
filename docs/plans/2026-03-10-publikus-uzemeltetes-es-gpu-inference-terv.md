@@ -508,3 +508,26 @@ Go-live előtt minden pont legyen kipipálva:
 - [ ] Költség dashboard elérhető (heti review ritual rögzítve).
 
 Ez a checklist olyan minimális production szintet céloz, ahol a rendszer publikus URL-en működik, de kontrollált (admin approval alapú) hozzáféréssel.
+
+---
+
+## 11) Gyors státusz összefoglaló (címek és alcímek)
+
+| Elem | Státusz |
+|---|---|
+| 8) Döntés rögzítése (induló production célállapot) | ✅ Kész |
+| 9) Részletes, manuális lépéseket is tartalmazó step-by-step task lista | 🟡 Folyamatban |
+| 9.1 Fiókok, szervezetek, hozzáférések (manuális) | ⬜ TODO |
+| 9.2 Domain és DNS (manuális) | ⬜ TODO |
+| 9.3 Repository és környezetek előkészítése | ⬜ TODO |
+| 9.4 Railway production stack létrehozása | ⬜ TODO |
+| 9.5 Cloudflare R2 bekötés | ⬜ TODO |
+| 9.6 Inference gateway + OpenAPI contract | ⬜ TODO |
+| 9.7 RunPod TTS és summary endpointok | ⬜ TODO |
+| 9.8 Queue + state machine standardizálás | ⬜ TODO |
+| 9.9 Admin approval workflow (új kötelező funkció) | 🟡 Folyamatban |
+| 9.10 Frontend publikus deploy (Vercel) | ⬜ TODO |
+| 9.11 Observability minimum csomag | ⬜ TODO |
+| 9.12 PWA alapok (feature flag mögött) | ⬜ TODO |
+| 9.13 Terhelés- és költségteszt | ⬜ TODO |
+| 10) Production Go-Live checklist (publikus URL + jóváhagyásos hozzáférés) | ⬜ TODO |
